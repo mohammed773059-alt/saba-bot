@@ -23,79 +23,125 @@ ADMIN_ID = os.environ.get('ADMIN_ID')
 
 bot = telebot.TeleBot(TOKEN)
 
-# 3. القائمة الرئيسية والأزرار التفاعلية
+# متغير مؤقت لحفظ حالة المستخدم (لمعرفة هل هو في وضع طرح سؤال)
+user_states = {}
+
+# --- القوائم الرئيسية والفرعية ---
+
+def main_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("📚 المواد التعليمية"),
+        telebot.types.KeyboardButton("📎 ملحقات"),
+        telebot.types.KeyboardButton("📅 جدول المحاضرات"),
+        telebot.types.KeyboardButton("❓ طرح سؤال"),
+        telebot.types.KeyboardButton("🔔 التذكيرات"),
+        telebot.types.KeyboardButton("📊 متابعة الأسئلة"),
+        telebot.types.KeyboardButton("👨‍💻 مطور البوت")
+    )
+    return markup
+
+def materials_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("مهارة اللغة العربية"),
+        telebot.types.KeyboardButton("مهارة اللغة الإنجليزية"),
+        telebot.types.KeyboardButton("التفاضل والتكامل"),
+        telebot.types.KeyboardButton("الفيزياء العامة وحوسبة"),
+        telebot.types.KeyboardButton("مقدمة في الحوسبة"),
+        telebot.types.KeyboardButton("مهارات الحاسوب"),
+        telebot.types.KeyboardButton("🏠 القائمة الرئيسية")
+    )
+    return markup
+
+def subject_sections_menu():
+    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    markup.add(
+        telebot.types.KeyboardButton("📖 المحاضرات"),
+        telebot.types.KeyboardButton("🎥 شروحات فيديو"),
+        telebot.types.KeyboardButton("📝 التكاليف"),
+        telebot.types.KeyboardButton("📄 ملفات PDF"),
+        telebot.types.KeyboardButton("📎 الملحقات"),
+        telebot.types.KeyboardButton("⬅️ رجوع للمواد"),
+        telebot.types.KeyboardButton("🏠 القائمة الرئيسية")
+    )
+    return markup
+
+# 3. معالج الأمر /start
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     user_name = message.from_user.first_name
+    user_states[message.from_user.id] = None
     welcome_text = (
         f"أهلاً بك يا مهندس {user_name} في بوت قسم تكنولوجيا المعلومات (IT) - موازي 🎓\n\n"
-        f"اختر من القائمة أدناه للبدء:"
+        f"اختر من القائمة الرئيسية أدناه:"
     )
-    
-    markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    
-    btn1 = telebot.types.KeyboardButton("📚 المواد التعليمية")
-    btn2 = telebot.types.KeyboardButton("📎 ملحقات")
-    btn3 = telebot.types.KeyboardButton("📅 جدول المحاضرات")
-    btn4 = telebot.types.KeyboardButton("❓ طرح سؤال")
-    btn5 = telebot.types.KeyboardButton("🔔 التذكيرات")
-    btn6 = telebot.types.KeyboardButton("📊 متابعة الأسئلة")
-    btn7 = telebot.types.KeyboardButton("👨‍💻 مطور البوت")
-    
-    markup.add(btn1, btn2)
-    markup.add(btn3, btn4)
-    markup.add(btn5, btn6)
-    markup.add(btn7)
-    
-    bot.reply_to(message, welcome_text, reply_markup=markup)
+    bot.reply_to(message, welcome_text, reply_markup=main_menu())
 
-# 4. معالجة الضغط على الأزرار والرسائل النصية
+# 4. معالجة الأزرار والرسائل النصية
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
+    user_id = message.from_user.id
     text = message.text
-    
-    if text == "📚 المواد التعليمية":
-        materials_text = (
-            "📚 **قائمة المواد التعليمية:**\n\n"
-            "• مهارة اللغة العربية\n"
-            "• مهارة اللغة الإنجليزية\n"
-            "• فيزياء عامة للحوسبة\n"
-            "• التفاضل والتكامل\n"
-            "• مقدمة في الحوسبة\n"
-            "• مهارات الحاسوب"
-        )
-        bot.reply_to(message, materials_text, parse_mode="Markdown")
-    
+
+    # التحقق إذا كان المستخدم في وضع طرح سؤال
+    if user_states.get(user_id) == "waiting_for_question":
+        user_states[user_id] = None
+        bot.reply_to(message, "✅ **تم إرسال سؤالك بنجاح!**\nسيتم مراجعته والرد عليك قريباً.", reply_markup=main_menu())
+        # إذا أردت تحويل السؤال للأدمن تلقائياً:
+        if ADMIN_ID:
+            try:
+                bot.send_message(ADMIN_ID, f"📩 سؤال جديد من الطالب [{message.from_user.first_name}]:\n\n{text}")
+            except Exception:
+                pass
+        return
+
+    # الأزرار الرئيسية
+    if text == "🏠 القائمة الرئيسية":
+        user_states[user_id] = None
+        bot.reply_to(message, "🏠 **القائمة الرئيسية:**", reply_markup=main_menu())
+
+    elif text == "📚 المواد التعليمية":
+        bot.reply_to(message, "📚 **اختر المادة التعليمية:**", reply_markup=materials_menu())
+
     elif text == "📎 ملحقات":
-        attachments_text = (
-            "📎 **قائمة الملازم والملحقات للمواد:**\n\n"
-            "• مهارة اللغة العربية\n"
-            "• مهارة اللغة الإنجليزية\n"
-            "• فيزياء عامة للحوسبة\n"
-            "• التفاضل والتكامل\n"
-            "• مقدمة في الحوسبة\n"
-            "• مهارات الحاسوب"
-        )
-        bot.reply_to(message, attachments_text, parse_mode="Markdown")
-    
+        bot.reply_to(message, "📎 **قسم الملحقات العامة:**\nاختر المادة لعرض ملحقاتها:", reply_markup=materials_menu())
+
+    elif text in ["مهارة اللغة العربية", "مهارة اللغة الإنجليزية", "التفاضل والتكامل", "الفيزياء العامة وحوسبة", "مقدمة في الحوسبة", "مهارات الحاسوب"]:
+        # حفظ المادة المختارة مؤقتاً وعرض الأقسام الفرعية (محاضرات، فيديو، تكاليف...)
+        user_states[user_id] = text
+        bot.reply_to(message, f"📚 **{text}**\nاختر القسم الدراسي المطلوب:", reply_markup=subject_sections_menu())
+
+    elif text == "⬅️ رجوع للمواد":
+        bot.reply_to(message, "📚 **اختر المادة التعليمية:**", reply_markup=materials_menu())
+
+    # الأقسام الفرعية للمادة
+    elif text in ["📖 المحاضرات", "🎥 شروحات فيديو", "📝 التكاليف", "📄 ملفات PDF", "📎 الملحقات"]:
+        current_subject = user_states.get(user_id, "المادة")
+        if not current_subject or current_subject in ["waiting_for_question", None]:
+            current_subject = "المادة المختارة"
+        bot.reply_to(message, f"📁 **{text}** الخاصة بـ ({current_subject}):\nسيتم إدراج الملفات والمحتويات هنا تباعاً.", reply_markup=subject_sections_menu())
+
     elif text == "📅 جدول المحاضرات":
-        bot.reply_to(message, "📅 **جدول المحاضرات الدراسية:**\nيمكنك نشر جدول المحاضرات بصيغة PDF هنا ليتمكن جميع الطلاب من تحميله ومراجعته.")
-    
+        bot.reply_to(message, "📅 **جدول المحاضرات الدراسية:**\n[يمكنك إرسال ملف الجدول بصيغة PDF هنا ليظهر للجميع]")
+
     elif text == "❓ طرح سؤال":
-        bot.reply_to(message, "❓ **طرح سؤال:**\nاكتب سؤالك أو استفسارك الآن في رسالة وسيقوم البوت بتسجيله وإرساله للمختصين.")
-    
+        user_states[user_id] = "waiting_for_question"
+        markup = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+        markup.add(telebot.types.KeyboardButton("🏠 القائمة الرئيسية"))
+        bot.reply_to(message, "❓ **طرح سؤال:**\nاكتب سؤالك الآن في رسالة واحدة وسيقوم البوت باستلامه وتسجيله:", reply_markup=markup)
+
     elif text == "🔔 التذكيرات":
-        bot.reply_to(message, "🔔 **قسم التذكيرات والتنبيهات:**\nتابع هنا أحدث المواعيد المهمة، الاختبارات، والتسليمات الخاصة بالمواد.")
-    
+        bot.reply_to(message, "🔔 **قسم التذكيرات:**\nلا توجد تذكيرات جديدة في الوقت الحالي. تابع معنا باستمرار.")
+
     elif text == "📊 متابعة الأسئلة":
-        bot.reply_to(message, "📊 **متابعة الأسئلة:**\nهنا يتم عرض وتتبع حالة الأسئلة والاستفسارات التي تم طرحها من قِبل الطلاب.")
-    
+        bot.reply_to(message, "📊 **متابعة الأسئلة:**\nهنا يتم عرض وتتبع حالة الأسئلة والاستفسارات الخاصة بك.")
+
     elif text == "👨‍💻 مطور البوت":
-        bot.reply_to(message, "👨‍💻 **مطور النظام:**\nتم تطوير وتبرمجة هذا البوت بواسطة المهندس: **محمد الظاهر**.")
-    
+        bot.reply_to(message, "👨‍💻 **مطور البوت:**\nالمهندس: **محمد الظاهر** 🚀")
+
     else:
-        # إذا كتب الطالب سؤالاً أو استفساراً عادياً، يتم الرد عليه وتنبيه الأدمن إن أمكن
-        bot.reply_to(message, f"✅ تم استلام رسالتك يا مهندس بنجاح وسيتم التعامل معها.")
+        bot.reply_to(message, f"تم استلام رسالتك: {text}", reply_markup=main_menu())
 
 if __name__ == "__main__":
     keep_alive()
