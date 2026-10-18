@@ -24,6 +24,13 @@ ADMIN_ID = os.environ.get('ADMIN_ID')
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
+# --- قاعدة بيانات مصغرة للمحتوى (المحاضرات والملفات) ---
+# يمكنك إضافة روابط أو ملفات هنا مستقبلاً. إذا تُركت فارغة ستظهر رسالة "سوف يتم إدراج المحاضرة قريباً"
+CONTENT_DATABASE = {
+    # مثال إذا أردت إدراج محاضرة جاهزة لمادة مهارة اللغة الإنجليزية:
+    # "mat_english_lectures": "📖 **المحاضرات المدرجة:**\n1. المحاضرة الأولى (PDF)\n2. المحاضرة الثانية (رابط فيديو)",
+}
+
 # --- الكيبورد السفلي الثابت (للأوامر العامة) ---
 def main_reply_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -38,7 +45,7 @@ def main_reply_keyboard():
     )
     return markup
 
-# --- أزرار رسائل المواد (Inline) داخل المحادثة ---
+# --- أزرار المواد (Inline) داخل المحادثة ---
 def inline_materials_menu():
     markup = telebot.types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -48,7 +55,7 @@ def inline_materials_menu():
         telebot.types.InlineKeyboardButton("الفيزياء العامة وحوسبة ⚛️", callback_data="mat_physics"),
         telebot.types.InlineKeyboardButton("مقدمة في الحوسبة 💻", callback_data="mat_intro"),
         telebot.types.InlineKeyboardButton("مهارات الحاسوب ⌨️", callback_data="mat_skills"),
-        telebot.types.InlineKeyboardButton("⬅️ رجوع للقائمة الرئيسية", callback_data="main_menu")
+        telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
     )
     return markup
 
@@ -73,7 +80,7 @@ def send_welcome(message):
     user_states[message.from_user.id] = None
     welcome_text = (
         f"أهلاً بك يا مهندس {user_name} في بوت قسم تكنولوجيا المعلومات (IT) - موازي 🎓\n\n"
-        f"اختر من القائمة أدناه:"
+        f"اختر من القائمة أدناه للبدء:"
     )
     bot.reply_to(message, welcome_text, reply_markup=main_reply_keyboard())
 
@@ -126,12 +133,12 @@ def callback_handler(call):
     message_id = call.message.message_id
 
     if data == "main_menu":
-        bot.edit_message_text("🏠 **القائمة الرئيسية:**\nاختر من الأزرار السفلية أو اضغط خياراً جديداً.", chat_id=chat_id, message_id=message_id)
+        bot.edit_message_text("🏠 **القائمة الرئيسية:**\nاختر من الأزرار السفلية أو اختر خياراً جديداً.", chat_id=chat_id, message_id=message_id)
         
-    elif data == "back_to_materials" or data == "mat_menu":
+    elif data == "back_to_materials":
         bot.edit_message_text("📚 **اختر المادة التعليمية:**", chat_id=chat_id, message_id=message_id, reply_markup=inline_materials_menu())
 
-    # تفاصيل المواد والتحويل لأقسامها
+    # اختيار المادة
     elif data.startswith("mat_"):
         mat_names = {
             "mat_arabic": "مهارة اللغة العربية",
@@ -144,11 +151,12 @@ def callback_handler(call):
         subject_name = mat_names.get(data, "المادة")
         bot.edit_message_text(f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:", chat_id=chat_id, message_id=message_id, reply_markup=inline_sections_menu(data))
 
-    # الأقسام الداخلية للمادة (محاضرات، فيديو، تكاليف...)
+    # اختيار القسم الفرعي (محاضرات، فيديو، تكاليف...)
     elif data.startswith("sec_"):
         parts = data.split("_")
-        section_type = parts[1]
-        
+        sec_type = parts[1]
+        mat_code = f"mat_{parts[2]}" if len(parts) > 2 else ""
+
         sec_titles = {
             "lectures": "📖 المحاضرات",
             "videos": "🎥 شروحات فيديو",
@@ -156,8 +164,25 @@ def callback_handler(call):
             "pdf": "📄 ملفات PDF",
             "attachments": "📎 الملحقات"
         }
-        title = sec_titles.get(section_type, "القسم")
-        bot.edit_message_text(f"📁 **{title}**\nسيتم إدراج الملفات والمحتويات هنا تباعاً.", chat_id=chat_id, message_id=message_id, reply_markup=inline_sections_menu(parts[2]))
+        title = sec_titles.get(sec_type, "القسم")
+        
+        # مفتاح البحث في قاعدة البيانات المخصصة
+        db_key = f"{mat_code}_{sec_type}"
+        
+        # إذا كانت المحاضرة أو الملف مدرجاً في قاعدة البيانات
+        if db_key in CONTENT_DATABASE:
+            response_text = CONTENT_DATABASE[db_key]
+        else:
+            # الخيار التلقائي إذا لم تُدرج بعد
+            response_text = f"📁 **{title}**\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**"
+
+        bot.edit_message_text(
+            response_text,
+            chat_id=chat_id,
+            message_id=message_id,
+            parse_mode="Markdown",
+            reply_markup=inline_sections_menu(parts[2])
+        )
 
 if __name__ == "__main__":
     keep_alive()
