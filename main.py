@@ -19,17 +19,14 @@ def keep_alive():
 
 # 2. قراءة المتغيرات وتأسيس البوت
 TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = os.environ.get('ADMIN_ID')
+ADMIN_ID = os.environ.get('ADMIN_ID') # رقم الآيدي الخاص بك
 
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
+admin_upload_cache = {} # لحفظ الملف المؤقت الذي يرفعه الآدمن قبل اختيار المادة
 
-# --- قاعدة بيانات مصغرة للمحتوى (المحاضرات والملفات) ---
-# يمكنك إضافة روابط أو ملفات هنا مستقبلاً. إذا تُركت فارغة ستظهر رسالة "سوف يتم إدراج المحاضرة قريباً"
-CONTENT_DATABASE = {
-    # مثال إذا أردت إدراج محاضرة جاهزة لمادة مهارة اللغة الإنجليزية:
-    # "mat_english_lectures": "📖 **المحاضرات المدرجة:**\n1. المحاضرة الأولى (PDF)\n2. المحاضرة الثانية (رابط فيديو)",
-}
+# قاعدة بيانات ديناميكية لحفظ المحتويات التي يرفعها الآدمن
+DYNAMIC_CONTENT = {}
 
 # --- الكيبورد السفلي الثابت (للأوامر العامة) ---
 def main_reply_keyboard():
@@ -46,28 +43,28 @@ def main_reply_keyboard():
     return markup
 
 # --- أزرار المواد (Inline) داخل المحادثة ---
-def inline_materials_menu():
+def inline_materials_menu(prefix="mat"):
     markup = telebot.types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        telebot.types.InlineKeyboardButton("مهارة اللغة العربية 📖", callback_data="mat_arabic"),
-        telebot.types.InlineKeyboardButton("مهارة اللغة الإنجليزية 📖", callback_data="mat_english"),
-        telebot.types.InlineKeyboardButton("التفاضل والتكامل 📐", callback_data="mat_math"),
-        telebot.types.InlineKeyboardButton("الفيزياء العامة وحوسبة ⚛️", callback_data="mat_physics"),
-        telebot.types.InlineKeyboardButton("مقدمة في الحوسبة 💻", callback_data="mat_intro"),
-        telebot.types.InlineKeyboardButton("مهارات الحاسوب ⌨️", callback_data="mat_skills"),
+        telebot.types.InlineKeyboardButton("مهارة اللغة العربية 📖", callback_data=f"{prefix}_arabic"),
+        telebot.types.InlineKeyboardButton("مهارة اللغة الإنجليزية 📖", callback_data=f"{prefix}_english"),
+        telebot.types.InlineKeyboardButton("التفاضل والتكامل 📐", callback_data=f"{prefix}_math"),
+        telebot.types.InlineKeyboardButton("الفيزياء العامة وحوسبة ⚛️", callback_data=f"{prefix}_physics"),
+        telebot.types.InlineKeyboardButton("مقدمة في الحوسبة 💻", callback_data=f"{prefix}_intro"),
+        telebot.types.InlineKeyboardButton("مهارات الحاسوب ⌨️", callback_data=f"{prefix}_skills"),
         telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
     )
     return markup
 
 # --- أزرار أقسام المادة داخل الرسالة (Inline) ---
-def inline_sections_menu(mat_code):
+def inline_sections_menu(mat_code, prefix="sec"):
     markup = telebot.types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        telebot.types.InlineKeyboardButton("📖 المحاضرات", callback_data=f"sec_lectures_{mat_code}"),
-        telebot.types.InlineKeyboardButton("🎥 شروحات فيديو", callback_data=f"sec_videos_{mat_code}"),
-        telebot.types.InlineKeyboardButton("📝 التكاليف", callback_data=f"sec_homework_{mat_code}"),
-        telebot.types.InlineKeyboardButton("📄 ملفات PDF", callback_data=f"sec_pdf_{mat_code}"),
-        telebot.types.InlineKeyboardButton("📎 الملحقات", callback_data=f"sec_attachments_{mat_code}"),
+        telebot.types.InlineKeyboardButton("📖 المحاضرات", callback_data=f"{prefix}_lectures_{mat_code}"),
+        telebot.types.InlineKeyboardButton("🎥 شروحات فيديو", callback_data=f"{prefix}_videos_{mat_code}"),
+        telebot.types.InlineKeyboardButton("📝 التكاليف", callback_data=f"{prefix}_homework_{mat_code}"),
+        telebot.types.InlineKeyboardButton("📄 ملفات PDF", callback_data=f"{prefix}_pdf_{mat_code}"),
+        telebot.types.InlineKeyboardButton("📎 الملحقات", callback_data=f"{prefix}_attachments_{mat_code}"),
         telebot.types.InlineKeyboardButton("↩️ رجوع للمواد", callback_data="back_to_materials"),
         telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main_menu")
     )
@@ -84,107 +81,13 @@ def send_welcome(message):
     )
     bot.reply_to(message, welcome_text, reply_markup=main_reply_keyboard())
 
-# 4. معالجة الرسائل والأزرار السفلية
-@bot.message_handler(func=lambda message: True)
+# 4. استقبال رسائل وملفات الأدمن أو الطلاب
+@bot.message_handler(content_types=['text', 'document', 'video', 'audio', 'photo'])
 def handle_all_messages(message):
     user_id = message.from_user.id
-    text = message.text
-
-    if user_states.get(user_id) == "waiting_for_question":
-        user_states[user_id] = None
-        bot.reply_to(message, "✅ **تم إرسال سؤالك بنجاح!**\nسيتم مراجعته والرد عليك قريباً.", reply_markup=main_reply_keyboard())
-        if ADMIN_ID:
-            try:
-                bot.send_message(ADMIN_ID, f"📩 سؤال جديد من الطالب [{message.from_user.first_name}]:\n\n{text}")
-            except Exception:
-                pass
-        return
-
-    if text == "📚 المواد التعليمية":
-        bot.send_message(message.chat.id, "📚 **اختر المادة التعليمية:**", reply_markup=inline_materials_menu())
-
-    elif text == "📎 ملحقات":
-        bot.send_message(message.chat.id, "📎 **قسم الملحقات العامة:**\nاختر المادة لعرض ملحقاتها:", reply_markup=inline_materials_menu())
-
-    elif text == "📅 جدول المحاضرات":
-        bot.reply_to(message, "📅 **جدول المحاضرات الدراسية:**\n[يمكنك إرسال ملف الجدول بصيغة PDF هنا ليظهر للجميع]")
-
-    elif text == "❓ طرح سؤال":
-        user_states[user_id] = "waiting_for_question"
-        bot.reply_to(message, "❓ **طرح سؤال:**\nاكتب سؤالك الآن في رسالة واحدة وسيقوم البوت باستلامه:")
-
-    elif text == "🔔 التذكيرات":
-        bot.reply_to(message, "🔔 **قسم التذكيرات:**\nلا توجد تذكيرات جديدة في الوقت الحالي.")
-
-    elif text == "📊 متابعة الأسئلة":
-        bot.reply_to(message, "📊 **متابعة الأسئلة:**\nهنا يتم عرض وتتبع حالة الأسئلة والاستفسارات الخاصة بك.")
-
-    elif text == "👨‍💻 مطور البوت":
-        bot.reply_to(message, "👨‍💻 **مطور البوت:**\nالمهندس: **محمد الظاهر** 🚀")
-
-    else:
-        bot.reply_to(message, f"تم استلام رسالتك: {text}", reply_markup=main_reply_keyboard())
-
-# 5. معالجة الضغط على الأزرار الشفافة داخل الرسائل (Inline Callbacks)
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    data = call.data
-    chat_id = call.message.chat.id
-    message_id = call.message.message_id
-
-    if data == "main_menu":
-        bot.edit_message_text("🏠 **القائمة الرئيسية:**\nاختر من الأزرار السفلية أو اختر خياراً جديداً.", chat_id=chat_id, message_id=message_id)
-        
-    elif data == "back_to_materials":
-        bot.edit_message_text("📚 **اختر المادة التعليمية:**", chat_id=chat_id, message_id=message_id, reply_markup=inline_materials_menu())
-
-    # اختيار المادة
-    elif data.startswith("mat_"):
-        mat_names = {
-            "mat_arabic": "مهارة اللغة العربية",
-            "mat_english": "مهارة اللغة الإنجليزية",
-            "mat_math": "التفاضل والتكامل",
-            "mat_physics": "الفيزياء العامة وحوسبة",
-            "mat_intro": "مقدمة في الحوسبة",
-            "mat_skills": "مهارات الحاسوب"
-        }
-        subject_name = mat_names.get(data, "المادة")
-        bot.edit_message_text(f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:", chat_id=chat_id, message_id=message_id, reply_markup=inline_sections_menu(data))
-
-    # اختيار القسم الفرعي (محاضرات، فيديو، تكاليف...)
-    elif data.startswith("sec_"):
-        parts = data.split("_")
-        sec_type = parts[1]
-        mat_code = f"mat_{parts[2]}" if len(parts) > 2 else ""
-
-        sec_titles = {
-            "lectures": "📖 المحاضرات",
-            "videos": "🎥 شروحات فيديو",
-            "homework": "📝 التكاليف",
-            "pdf": "📄 ملفات PDF",
-            "attachments": "📎 الملحقات"
-        }
-        title = sec_titles.get(sec_type, "القسم")
-        
-        # مفتاح البحث في قاعدة البيانات المخصصة
-        db_key = f"{mat_code}_{sec_type}"
-        
-        # إذا كانت المحاضرة أو الملف مدرجاً في قاعدة البيانات
-        if db_key in CONTENT_DATABASE:
-            response_text = CONTENT_DATABASE[db_key]
-        else:
-            # الخيار التلقائي إذا لم تُدرج بعد
-            response_text = f"📁 **{title}**\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**"
-
-        bot.edit_message_text(
-            response_text,
-            chat_id=chat_id,
-            message_id=message_id,
-            parse_mode="Markdown",
-            reply_markup=inline_sections_menu(parts[2])
-        )
-
-if __name__ == "__main__":
-    keep_alive()
-    print("Bot is starting...")
-    bot.polling(none_stop=True)
+    
+    # التحقق إذا كان المرسل هو الآدمن ويريد رفع محتوى جديد
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        # إذا أرسل الآدمن ملفاً أو رسالة ولم يكن يكتب سؤالاً عادياً
+        if message.content_type != 'text' or (message.text and not message.text.startswith('/') and user_states.get(user_id) != "waiting_for_question"):
+            # حفظ المحتوى مؤقتاً في الذاكرة لتوجيهه
