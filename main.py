@@ -19,13 +19,12 @@ def keep_alive():
 
 # 2. قراءة المتغيرات وتأسيس البوت
 TOKEN = os.environ.get('BOT_TOKEN')
-ADMIN_ID = os.environ.get('ADMIN_ID') # رقم الآيدي الخاص بك
+ADMIN_ID = os.environ.get('ADMIN_ID')
 
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
-admin_upload_cache = {} # لحفظ الملف المؤقت الذي يرفعه الآدمن قبل اختيار المادة
+admin_upload_cache = {}
 
-# قاعدة بيانات ديناميكية لحفظ المحتويات التي يرفعها الآدمن
 DYNAMIC_CONTENT = {}
 
 # --- الكيبورد السفلي الثابت (للأوامر العامة) ---
@@ -86,8 +85,118 @@ def send_welcome(message):
 def handle_all_messages(message):
     user_id = message.from_user.id
     
-    # التحقق إذا كان المرسل هو الآدمن ويريد رفع محتوى جديد
     if ADMIN_ID and str(user_id) == str(ADMIN_ID):
-        # إذا أرسل الآدمن ملفاً أو رسالة ولم يكن يكتب سؤالاً عادياً
         if message.content_type != 'text' or (message.text and not message.text.startswith('/') and user_states.get(user_id) != "waiting_for_question"):
-            # حفظ المحتوى مؤقتاً في الذاكرة لتوجيهه
+            admin_upload_cache[user_id] = message
+            bot.reply_to(message, "📥 **تم استقبال المحتوى بنجاح!**\nالآن، اختر المادة التي تريد إدراج هذا المحتوى لها:", reply_markup=inline_materials_menu(prefix="upmat"))
+            return
+
+    if user_states.get(user_id) == "waiting_for_question":
+        user_states[user_id] = None
+        bot.reply_to(message, "✅ **تم إرسال سؤالك بنجاح!**\nسيتم مراجعته والرد عليك قريباً.", reply_markup=main_reply_keyboard())
+        if ADMIN_ID:
+            try:
+                bot.send_message(ADMIN_ID, f"📩 سؤال جديد من الطالب [{message.from_user.first_name}]:\n\n{message.text}")
+            except Exception:
+                pass
+        return
+
+    text = message.text if message.text else ""
+
+    if text == "📚 المواد التعليمية":
+        bot.send_message(message.chat.id, "📚 **اختر المادة التعليمية:**", reply_markup=inline_materials_menu(prefix="mat"))
+
+    elif text == "📎 ملحقات":
+        bot.send_message(message.chat.id, "📎 **قسم الملحقات العامة:**\nاختر المادة لعرض ملحقاتها:", reply_markup=inline_materials_menu(prefix="mat"))
+
+    elif text == "📅 جدول المحاضرات":
+        bot.reply_to(message, "📅 **جدول المحاضرات الدراسية:**\n[يمكنك إرسال ملف الجدول بصيغة PDF هنا ليظهر للجميع]")
+
+    elif text == "❓ طرح سؤال":
+        user_states[user_id] = "waiting_for_question"
+        bot.reply_to(message, "❓ **طرح سؤال:**\nاكتب سؤالك الآن في رسالة واحدة وسيقوم البوت باستلامه:")
+
+    elif text == "🔔 التذكيرات":
+        bot.reply_to(message, "🔔 **قسم التذكيرات:**\nلا توجد تذكيرات جديدة في الوقت الحالي.")
+
+    elif text == "📊 متابعة الأسئلة":
+        bot.reply_to(message, "📊 **متابعة الأسئلة:**\nهنا يتم عرض وتتبع حالة الأسئلة والاستفسارات الخاصة بك.")
+
+    elif text == "👨‍💻 مطور البوت":
+        bot.reply_to(message, "👨‍💻 **مطور البوت:**\nالمهندس: **محمد الظاهر** 🚀")
+
+    else:
+        if text:
+            bot.reply_to(message, f"تم استلام رسالتك: {text}", reply_markup=main_reply_keyboard())
+
+# 5. معالجة الضغط على الأزرار الشفافة
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    data = call.data
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+
+    mat_names = {
+        "arabic": "مهارة اللغة العربية",
+        "english": "مهارة اللغة الإنجليزية",
+        "math": "التفاضل والتكامل",
+        "physics": "الفيزياء العامة وحوسبة",
+        "intro": "مقدمة في الحوسبة",
+        "skills": "مهارات الحاسوب"
+    }
+
+    if data == "main_menu":
+        bot.send_message(chat_id, "🏠 **القائمة الرئيسية:**", reply_markup=main_reply_keyboard())
+        
+    elif data == "back_to_materials":
+        bot.send_message(chat_id, "📚 **اختر المادة التعليمية:**", reply_markup=inline_materials_menu(prefix="mat"))
+
+    elif data.startswith("upmat_"):
+        mat_code = data.split("_")[1]
+        admin_upload_cache[f"{user_id}_mat"] = mat_code
+        bot.send_message(chat_id, f"لقد اخترت مادة: **{mat_names.get(mat_code)}**\nالآن اختر القسم الذي تود إدراج المحتوى فيه:", reply_markup=inline_sections_menu(mat_code, prefix="upsec"))
+
+    elif data.startswith("upsec_"):
+        parts = data.split("_")
+        sec_type = parts[1]
+        mat_code = parts[2]
+        
+        cached_msg = admin_upload_cache.get(user_id)
+        if cached_msg:
+            db_key = f"{mat_code}_{sec_type}"
+            DYNAMIC_CONTENT[db_key] = cached_msg
+            bot.send_message(chat_id, f"✅ **تم إدراج المحتوى بنجاح في ({mat_names.get(mat_code)} ⟵ {sec_type})!**")
+        else:
+            bot.send_message(chat_id, "⚠️ حدث خطأ أو انقضت المهلة، حاول إرسال الملف مرة أخرى.")
+        return
+
+    elif data.startswith("mat_"):
+        mat_code = data.split("_")[1]
+        subject_name = mat_names.get(mat_code, "المادة")
+        bot.send_message(chat_id, f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:", reply_markup=inline_sections_menu(mat_code, prefix="sec"))
+
+    elif data.startswith("sec_"):
+        parts = data.split("_")
+        sec_type = parts[1]
+        mat_code = parts[2]
+
+        sec_titles = {
+            "lectures": "📖 المحاضرات",
+            "videos": "🎥 شروحات فيديو",
+            "homework": "📝 التكاليف",
+            "pdf": "📄 ملفات PDF",
+            "attachments": "📎 الملحقات"
+        }
+        title = sec_titles.get(sec_type, "القسم")
+        db_key = f"{mat_code}_{sec_type}"
+
+        if db_key in DYNAMIC_CONTENT:
+            saved_msg = DYNAMIC_CONTENT[db_key]
+            bot.copy_message(chat_id=chat_id, from_chat_id=saved_msg.chat.id, message_id=saved_msg.message_id)
+        else:
+            bot.send_message(chat_id, f"📁 **{title}**\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**", parse_mode="Markdown")
+
+if __name__ == "__main__":
+    keep_alive()
+    print("Bot is starting...")
+    bot.polling(none_stop=True)
