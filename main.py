@@ -7,7 +7,7 @@ from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # ==========================================
-# إعدادات خادم الويب الوهمي لبقاء البوت نشطاً على Render
+# إعدادات خادم الويب لبقاء البوت نشطاً على Render
 # ==========================================
 app = Flask('')
 
@@ -783,7 +783,6 @@ def handle_message(message):
                     )
 
         elif text == "🏠 القائمة الرئيسية":
-        # اختيار الفصل الدراسي
             send_home(chat_id)
 
         return
@@ -791,4 +790,5 @@ def handle_message(message):
     if state in (
         "student_semester",
         "student_attachments_semester",
-        "stud
+        "student_schedule_semester",
+        "stude
