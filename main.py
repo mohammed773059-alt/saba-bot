@@ -24,7 +24,7 @@ ADMIN_ID = os.environ.get('ADMIN_ID')
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
 
-# --- الكيبورد السفلي الثابت (مع عكس الأماكن: اليمين إلى اليسار واليسار إلى اليمين) ---
+# --- الكيبورد السفلي الثابت (مع عكس الأماكن) ---
 def main_reply_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(
@@ -72,8 +72,8 @@ def send_welcome(message):
     user_name = message.from_user.first_name
     user_states[message.from_user.id] = None
     welcome_text = (
-        f"أهلاً بك مجددا مهندس {user_name}!\n"
-        f"👥 مجموعتك الدراسية الحالية: تكنولوجيا المعلومات موازي (IT)[span_1](start_span)[span_1](end_span)[span_2](start_span)[span_2](end_span)\n\n"
+        f"أهلاً بك مجدداً يا مهندس {user_name}!\n"
+        f"👥 مجموعتك الدراسية الحالية: تكنولوجيا المعلومات موازي (IT)\n\n"
         f"اختر الخدمة المطلوبة من القائمة أدناه:"
     )
     bot.reply_to(message, welcome_text, reply_markup=main_reply_keyboard())
@@ -91,7 +91,7 @@ def handle_all_messages(message):
 
     if user_states.get(user_id) == "waiting_for_question":
         user_states[user_id] = None
-        bot.reply_to(message, "✅ **تم إرسال سؤالك بنجاح!**\nسيتم مراجعته والرد عليك قريباً.", reply_markup=main_reply_keyboard())
+        bot.reply_to(message, "✅ تم إرسال سؤالك بنجاح!\nسيتم مراجعته والرد عليك قريباً.", reply_markup=main_reply_keyboard())
         if ADMIN_ID:
             try:
                 bot.send_message(ADMIN_ID, f"📩 سؤال جديد من الطالب [{message.from_user.first_name}]:\n\n{text}")
@@ -100,12 +100,12 @@ def handle_all_messages(message):
         return
 
     if text == "📚 المواد التعليمية" or text == "📎 ملحقات":
-        bot.send_message(message.chat.id, "📚 **اختر المادة التعليمية:**", reply_markup=inline_materials_menu(prefix="mat"))
+        bot.send_message(message.chat.id, "📚 **اختر المادة التعليمية:**", parse_mode="Markdown", reply_markup=inline_materials_menu(prefix="mat"))
 
     elif text == "📅 جدول المحاضرات":
         schedule_text = (
             "📅 **جدول المحاضرات الدراسية**\n"
-            "قسم تقنية المعلومات (IT - موازي)[span_3](start_span)[span_3](end_span)\n\n"
+            "قسم تقنية المعلومات (IT - موازي)\n\n"
             "📎 [اضغط هنا لتحميل ملف جدول المحاضرات PDF]"
         )
         bot.reply_to(message, schedule_text, parse_mode="Markdown", reply_markup=main_reply_keyboard())
@@ -114,20 +114,20 @@ def handle_all_messages(message):
         user_states[user_id] = "waiting_for_question"
         question_prompt = (
             "❓ **قم بكتابة السؤال الذي تريد طرحه:**\n\n"
-            "(يمكنك إرسال `/cancel` في أي وقت للإلغاء)[span_4](start_span)[span_4](end_span)"
+            "(يمكنك إرسال `/cancel` في أي وقت للإلغاء)"
         )
         bot.reply_to(message, question_prompt, parse_mode="Markdown")
 
     elif text == "🔔 التذكيرات":
-        bot.reply_to(message, "🔔 You do not have any reminders.", reply_markup=main_reply_keyboard())[span_5](start_span)[span_5](end_span)
+        bot.reply_to(message, "🔔 You do not have any reminders.", reply_markup=main_reply_keyboard())
 
     elif text == "📊 متابعة الأسئلة":
         status_text = (
             "📊 **سجل أسئلتك وحالتها:**\n\n"
             "-----------------------------------\n"
-            "🕒 **التاريخ:** PM 06:03 15-10-2026[span_6](start_span)[span_6](end_span)\n"
-            "❓ **السؤال:** متابعة الأسئلة[span_7](start_span)[span_7](end_span)\n"
-            "📌 **الحالة:** قيد انتظار رد المدرس[span_8](start_span)[span_8](end_span)\n"
+            "🕒 **التاريخ:** PM 06:03 15-10-2026\n"
+            "❓ **السؤال:** متابعة الأسئلة\n"
+            "📌 **الحالة:** قيد انتظار رد المدرس\n"
             "-----------------------------------"
         )
         bot.reply_to(message, status_text, parse_mode="Markdown", reply_markup=main_reply_keyboard())
@@ -139,9 +139,12 @@ def handle_all_messages(message):
         if text and not text.startswith('/'):
             pass
 
-# 5. معالجة الضغط على الأزرار الشفافة
+# 5. معالجة الضغط على الأزرار الشفافة فوراً وبدون أي تأخير (0 ثانية)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
+    # إخبار تليجرام فوراً بالاستلام لإنهاء التحميل والانتظار ⚡
+    bot.answer_callback_query(call.id)
+    
     data = call.data
     chat_id = call.message.chat.id
 
@@ -155,15 +158,15 @@ def callback_handler(call):
     }
 
     if data == "main_menu":
-        bot.send_message(chat_id, "🏠 **القائمة الرئيسية:**", reply_markup=main_reply_keyboard())
+        bot.send_message(chat_id, "🏠 **القائمة الرئيسية:**", parse_mode="Markdown", reply_markup=main_reply_keyboard())
         
     elif data == "back_to_materials":
-        bot.send_message(chat_id, "📚 **اختر المادة التعليمية:**", reply_markup=inline_materials_menu(prefix="mat"))
+        bot.send_message(chat_id, "📚 **اختر المادة التعليمية:**", parse_mode="Markdown", reply_markup=inline_materials_menu(prefix="mat"))
 
     elif data.startswith("mat_"):
         mat_code = data.split("_")[1]
         subject_name = mat_names.get(mat_code, "المادة")
-        bot.send_message(chat_id, f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:", reply_markup=inline_sections_menu(mat_code, prefix="sec"))
+        bot.send_message(chat_id, f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:", parse_mode="Markdown", reply_markup=inline_sections_menu(mat_code, prefix="sec"))
 
     elif data.startswith("sec_"):
         parts = data.split("_")
