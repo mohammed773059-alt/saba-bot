@@ -789,4 +789,4 @@ def handle_message(message):
             "الفصل الدراسي الثاني"
         ):
             bot.send_message(chat_id, "اختر أحد الفصلين من القائمة.")
-   
+ 
