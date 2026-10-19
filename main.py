@@ -3,23 +3,9 @@ import sqlite3
 import threading
 import telebot
 from flask import Flask
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ==========================================
-# 1. خادم ويب لتشغيل البوت على Render
-# ==========================================
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running online!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# ==========================================
-# 2. إعدادات البوت والقيم الأساسية
+# إعدادات البوت وقاعدة البيانات
 # ==========================================
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID_RAW = os.getenv("ADMIN_USER_ID", "0")
@@ -28,9 +14,7 @@ if not TOKEN:
     raise RuntimeError("يجب إعداد TELEGRAM_BOT_TOKEN في Secrets.")
 
 ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW.isdigit() else 0
-
 bot = telebot.TeleBot(TOKEN)
-
 DB_FILE = "library.db"
 
 SUBJECTS = [
@@ -76,9 +60,6 @@ ADMIN_AFTER_SAVE_ITEMS = [
 user_states = {}
 user_data = {}
 
-# ==========================================
-# 3. قاعدة البيانات
-# ==========================================
 def connect_db():
     conn = sqlite3.connect(DB_FILE, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -100,7 +81,6 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -109,7 +89,6 @@ def init_db():
                 text_content TEXT
             )
         """)
-
         conn.execute("""
             CREATE TABLE IF NOT EXISTS questions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,13 +103,10 @@ def init_db():
 
 init_db()
 
-# ==========================================
-# 4. الواجهات والقوائم
-# ==========================================
 def make_reply_keyboard(items, columns=2):
-    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=columns)
+    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=columns)
     for i in range(0, len(items), columns):
-        markup.row(*[KeyboardButton(x) for x in items[i:i + columns]])
+        markup.row(*[telebot.types.KeyboardButton(x) for x in items[i:i + columns]])
     return markup
 
 def send_home(chat_id):
@@ -152,16 +128,16 @@ def is_admin(user_id):
     return ADMIN_ID == 0 or user_id == ADMIN_ID
 
 def get_subjects_inline(prefix="sub"):
-    markup = InlineKeyboardMarkup()
+    markup = telebot.types.InlineKeyboardMarkup()
     icons = ["📖 ", "📖 ", "📐 ", "⚛️ ", "💻 ", "💻 "]
     for idx, sub in enumerate(SUBJECTS):
         icon = icons[idx] if idx < len(icons) else "📚 "
-        markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"{prefix}_{idx}"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+        markup.add(telebot.types.InlineKeyboardButton(f"{icon}{sub}", callback_data=f"{prefix}_{idx}"))
+    markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
 def get_categories_inline(prefix="cat"):
-    markup = InlineKeyboardMarkup()
+    markup = telebot.types.InlineKeyboardMarkup()
     cat_icons = {
         "المحاضرات": "📖 ",
         "شروحات فيديو": "🎥 ",
@@ -171,14 +147,11 @@ def get_categories_inline(prefix="cat"):
     }
     for cat in CATEGORIES:
         icon = cat_icons.get(cat, "📂 ")
-        markup.add(InlineKeyboardButton(f"{icon}{cat}", callback_data=f"{prefix}_{cat}"))
-    markup.add(InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_subjects"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+        markup.add(telebot.types.InlineKeyboardButton(f"{icon}{cat}", callback_data=f"{prefix}_{cat}"))
+    markup.add(telebot.types.InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_subjects"))
+    markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
-# ==========================================
-# 5. الأوامر ولوحة الإدارة والأسئلة
-# ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
     send_home(message.chat.id)
@@ -395,9 +368,6 @@ def receive_payload(message):
 
     save_content_db(chat_id, message.content_type, file_id=file_id)
 
-# ==========================================
-# 6. الأزرار التفاعلية (Callback Query)
-# ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     chat_id = call.message.chat.id
@@ -450,9 +420,9 @@ def handle_callback(call):
                 """, (subject_name,)).fetchall()
 
             if not rows:
-                back_markup = InlineKeyboardMarkup()
-                back_markup.add(InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_attachments_subjects"))
-                back_markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+                back_markup = telebot.types.InlineKeyboardMarkup()
+                back_markup.add(telebot.types.InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_attachments_subjects"))
+                back_markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
                 bot.edit_message_text(
                     f"📎 **ملحقات مادة:** {subject_name}\n\n⏳ **سوف يتم إدراج المحتويات قريباً.**",
                     chat_id=chat_id,
@@ -462,11 +432,11 @@ def handle_callback(call):
                 bot.answer_callback_query(call.id)
                 return
 
-            markup = InlineKeyboardMarkup()
+            markup = telebot.types.InlineKeyboardMarkup()
             for row in rows:
-                markup.add(InlineKeyboardButton(f"📖 {row['title']}", callback_data=f"attlec_{row['title']}"))
-            markup.add(InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_attachments_subjects"))
-            markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+                markup.add(telebot.types.InlineKeyboardButton(f"📖 {row['title']}", callback_data=f"attlec_{row['title']}"))
+            markup.add(telebot.types.InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_attachments_subjects"))
+            markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
 
             bot.edit_message_text(
                 f"📎 **ملحقات مادة:** {subject_name}\nاختر المحاضرة المطلوبة:",
@@ -495,12 +465,12 @@ def handle_callback(call):
         return
 
     if data == "back_to_attachments_subjects":
-        markup = InlineKeyboardMarkup()
+        markup = telebot.types.InlineKeyboardMarkup()
         icons = ["📖 ", "📖 ", "📐 ", "⚛️ ", "💻 ", "💻 "]
         for idx, sub in enumerate(SUBJECTS):
             icon = icons[idx] if idx < len(icons) else "📚 "
-            markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"submat_{idx}"))
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+            markup.add(telebot.types.InlineKeyboardButton(f"{icon}{sub}", callback_data=f"submat_{idx}"))
+        markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
         bot.edit_message_text(
             "📎 **اختر المادة لعرض ملحقاتها المرتبطة:**",
             chat_id=chat_id,
@@ -523,9 +493,9 @@ def handle_callback(call):
             """, (subject,)).fetchall()
 
         if not rows:
-            back_cats_markup = InlineKeyboardMarkup()
-            back_cats_markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
-            back_cats_markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+            back_cats_markup = telebot.types.InlineKeyboardMarkup()
+            back_cats_markup.add(telebot.types.InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
+            back_cats_markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
             
             bot.edit_message_text(
                 f"📂 **{category_name}** - {subject}\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**",
@@ -536,12 +506,12 @@ def handle_callback(call):
             bot.answer_callback_query(call.id)
             return
 
-        markup = InlineKeyboardMarkup()
+        markup = telebot.types.InlineKeyboardMarkup()
         for row in rows:
-            markup.add(InlineKeyboardButton(f"📖 {row['title']}", callback_data=f"lec_{row['title']}"))
+            markup.add(telebot.types.InlineKeyboardButton(f"📖 {row['title']}", callback_data=f"lec_{row['title']}"))
         
-        markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
-        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+        markup.add(telebot.types.InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
+        markup.add(telebot.types.InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
 
         bot.edit_message_text(
             f"📚 **{subject}**\nاختر المحاضرة المطلوبة لعرض محتوياتها:",
@@ -566,4 +536,19 @@ def handle_callback(call):
     if data.startswith("lec_"):
         lecture_title = data.replace("lec_", "")
         user_data.setdefault(chat_id, {})["current_lecture"] = lecture_title
-        subject = user_data.get(chat_id,)
+        subject = user_data.get(chat_id, {}).get("subject", "عام")
+
+        with connect_db() as conn:
+            available_cats = conn.execute("""
+                SELECT DISTINCT category FROM content
+                WHERE subject = ? AND title = ?
+            """, (subject, lecture_title)).fetchall()
+
+        cat_names = [r["category"] for r in available_cats]
+
+        markup = telebot.types.InlineKeyboardMarkup()
+        cat_icons = {
+            "المحاضرات": "📄 ملف المحاضرة (PDF/نص)",
+            "شروحات فيديو": "🎥 فيديو الشرح",
+            "التكاليف": "📝 التكليف",
+       
