@@ -37,7 +37,7 @@ bot = telebot.TeleBot(TOKEN)
 DB_FILE = "library.db"
 SYSTEM = "الموازي"
 
-# المواد المعتمدة الـ 6 فقط
+# المواد المعتمدة الـ 6
 SUBJECTS = [
     "مهارة اللغة العربية",
     "مهارة اللغة الإنجليزية",
@@ -91,7 +91,7 @@ def init_db():
         conn.execute("""
             CREATE TABLE IF NOT EXISTS content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                semester TEXT NOT NULL,
+                semester TEXT NOT NULL DEFAULT 'الفصل الدراسي الأول',
                 subject TEXT NOT NULL,
                 category TEXT NOT NULL,
                 doctor TEXT DEFAULT '',
@@ -148,26 +148,18 @@ def send_home(chat_id):
 def is_admin(message):
     return message.from_user.id == ADMIN_ID
 
-# إنشاء أزرار الفصول إنلاين
-def get_semesters_inline(action_prefix):
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("📅 الفصل الدراسي الأول", callback_data=f"{action_prefix}_sem1"))
-    markup.add(InlineKeyboardButton("📅 الفصل الدراسي الثاني", callback_data=f"{action_prefix}_sem2"))
-    markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
-    return markup
-
-# إنشاء أزرار المواد إنلاين
-def get_subjects_inline(semester):
+# أزرار المواد إنلاين للطلاب وللأدمن
+def get_subjects_inline(action_prefix="sub"):
     markup = InlineKeyboardMarkup()
     icons = ["📖 ", "📖 ", "📐 ", "⚛️ ", "💻 ", "💻 "]
     for idx, sub in enumerate(SUBJECTS):
         icon = icons[idx] if idx < len(icons) else "📚 "
-        markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"sub_{idx}"))
+        markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"{action_prefix}_{idx}"))
     markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
-# إنشاء أزرار الأقسام (المحاضرات، الملحقات...) إنلاين
-def get_categories_inline():
+# أزرار الأقسام إنلاين
+def get_categories_inline(action_prefix="cat"):
     markup = InlineKeyboardMarkup()
     cat_icons = {
         "المحاضرات": "📖 ",
@@ -178,13 +170,13 @@ def get_categories_inline():
     }
     for cat in CATEGORIES:
         icon = cat_icons.get(cat, "📂 ")
-        markup.add(InlineKeyboardButton(f"{icon}{cat}", callback_data=f"cat_{cat}"))
+        markup.add(InlineKeyboardButton(f"{icon}{cat}", callback_data=f"{action_prefix}_{cat}"))
     markup.add(InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_subjects"))
     markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
 # ==========================================
-# 5. معالجة أوامر البوت والأدمن
+# 5. لوحة الإدارة والأوامر
 # ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -199,26 +191,23 @@ def admin_panel(message):
     user_states[message.chat.id] = "admin_menu"
     bot.send_message(
         message.chat.id,
-        "🔐 لوحة إدارة مكتبة الكلية\n\nاختر العملية المطلوبة:",
+        "🔐 **لوحة إدارة مكتبة الكلية**\n\nاختر العملية المطلوبة:",
         reply_markup=make_reply_keyboard([
             "➕ إضافة محتوى",
-            "➕ إضافة مادة",
             "📋 عرض المحتوى",
-            "🗑 حذف محتوى",
             "💬 أسئلة الطلاب",
             "🏠 القائمة الرئيسية"
         ])
     )
 
-def ask_next_content_field(chat_id, field):
+def ask_next_admin_field(chat_id, field):
     prompts = {
-        "doctor": "👨‍🏫 اكتب اسم الدكتور:\nإذا لم يوجد، اكتب: لا يوجد",
-        "subject": "📚 اكتب اسم المادة الدراسية:",
+        "doctor": "👨‍🏫 اكتب اسم الدكتور:\n(إذا لم يوجد، أرسل كلمة: لا يوجد)",
         "title": "📝 اكتب عنوان المحتوى أو المحاضرة:",
-        "notes": "📌 اكتب ملاحظاتك:\nإذا لم يوجد، اكتب: لا يوجد",
-        "payload": "📎 أرسل المحتوى الآن (ملف PDF، فيديو، صورة، نص، أو أي مرفق)."
+        "notes": "📌 اكتب ملاحظاتك:\n(إذا لم يوجد، أرسل كلمة: لا يوجد)",
+        "payload": "📎 أرسل المحتوى الآن (يقبل البوت: ملفات PDF، فيديوهات، صور، روابط، نصوص، تسجيلات صوتية...)"
     }
-    user_states[chat_id] = "add_" + field
+    user_states[chat_id] = "admin_add_" + field
     bot.send_message(chat_id, prompts[field])
 
 def save_content(chat_id, content_type, file_id="", text_content=""):
@@ -244,17 +233,19 @@ def save_content(chat_id, content_type, file_id="", text_content=""):
 
     bot.send_message(
         chat_id,
-        "✅ تم إدراج المحتوى بنجاح!\n\n"
-        f"📚 المادة: {data.get('subject')}\n"
-        f"📂 القسم: {data.get('category')}\n"
-        f"📝 العنوان: {data.get('title')}"
+        "✅ **تم حفظ وإدراج المحتوى بنجاح!**\n\n"
+        f"📚 **المادة:** {data.get('subject')}\n"
+        f"📂 **القسم:** {data.get('category')}\n"
+        f"👨‍🏫 **الدكتور:** {data.get('doctor') or 'غير محدد'}\n"
+        f"📝 **العنوان:** {data.get('title')}\n\n"
+        "أصبح المحتوى متاحاً لجميع الطلاب في المكتبة الآن."
     )
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
 
 @bot.message_handler(
     content_types=["text", "document", "video", "photo", "audio", "voice", "animation", "video_note"],
-    func=lambda m: m.chat.id in user_states and user_states[m.chat.id] == "add_payload"
+    func=lambda m: m.chat.id in user_states and user_states[m.chat.id] == "admin_add_payload"
 )
 def receive_content(message):
     if not is_admin(message):
@@ -324,7 +315,7 @@ def admin_answer(message):
     bot.reply_to(message, "✅ تم إرسال الإجابة للطالب.")
 
 # ==========================================
-# 6. التفاعل مع الضغط على الأزرار المدمجة (Callback Query)
+# 6. التفاعل مع الضغط على الأزرار المدمجة
 # ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -336,47 +327,61 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # اختيار الفصل الدراسي
-    if data.startswith("stud_sem"):
-        semester = "الفصل الدراسي الأول" if "sem1" in data else "الفصل الدراسي الثاني"
-        user_data.setdefault(chat_id, {})["semester"] = semester
+    # --- تسلسل الإضافة للـ ADMIN ---
+    if data.startswith("admin_sub_"):
+        sub_idx = int(data.split("_")[2])
+        subject_name = SUBJECTS[sub_idx]
+        user_data.setdefault(chat_id, {})["subject"] = subject_name
+        
         bot.edit_message_text(
-            "📚 اختر المادة التعليمية:",
+            f"➕ **المادة المختارة:** {subject_name}\nاختر القسم الذي تريد الإضافة إليه:",
             chat_id=chat_id,
             message_id=call.message.message_id,
-            reply_markup=get_subjects_inline(semester)
+            reply_markup=get_categories_inline("admin_cat")
         )
         bot.answer_callback_query(call.id)
         return
 
-    # اختيار المادة
+    if data.startswith("admin_cat_"):
+        category_name = data.replace("admin_cat_", "")
+        user_data.setdefault(chat_id, {})["category"] = category_name
+        
+        bot.send_message(
+            chat_id,
+            f"🎯 **بدء إضافة محتوى جديد**\n"
+            f"📚 المادة: {user_data[chat_id]['subject']}\n"
+            f"📂 القسم: {category_name}\n\n"
+            "سنقوم الآن بأخذ تفاصيل المحتوى."
+        )
+        ask_next_admin_field(chat_id, "doctor")
+        bot.answer_callback_query(call.id)
+        return
+
+    # --- تصفح الطلاب للمكتبة ---
     if data.startswith("sub_"):
         sub_idx = int(data.split("_")[1])
         subject_name = SUBJECTS[sub_idx]
         user_data.setdefault(chat_id, {})["subject"] = subject_name
         
         bot.edit_message_text(
-            f"📚 {subject_name}\nاختر القسم الدراسي المطلوب:",
+            f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:",
             chat_id=chat_id,
             message_id=call.message.message_id,
-            reply_markup=get_categories_inline()
+            reply_markup=get_categories_inline("cat")
         )
         bot.answer_callback_query(call.id)
         return
 
-    # العودة لتأكيد قائمة المواد
     if data == "back_to_subjects":
-        semester = user_data.get(chat_id, {}).get("semester", "الفصل الدراسي الأول")
         bot.edit_message_text(
             "📚 اختر المادة التعليمية:",
             chat_id=chat_id,
             message_id=call.message.message_id,
-            reply_markup=get_subjects_inline(semester)
+            reply_markup=get_subjects_inline("sub")
         )
         bot.answer_callback_query(call.id)
         return
 
-    # اختيار القسم (محاضرات، ملخصات...) وعرض المحتوى
     if data.startswith("cat_"):
         category_name = data.replace("cat_", "")
         user_data.setdefault(chat_id, {})["category"] = category_name
@@ -389,9 +394,9 @@ def handle_callback(call):
         with connect_db() as conn:
             rows = conn.execute("""
                 SELECT * FROM content
-                WHERE semester = ? AND subject = ? AND category = ?
+                WHERE subject = ? AND category = ?
                 ORDER BY id DESC
-            """, (semester, subject, category_name)).fetchall()
+            """, (subject, category_name)).fetchall()
 
         if not rows:
             bot.send_message(chat_id, "⌛ سوف يتم إدراج المحاضرات والمحتويات قريباً.")
@@ -422,7 +427,7 @@ def handle_callback(call):
         return
 
 # ==========================================
-# 7. معالج الرسائل العادية والقائمة الرئيسية
+# 7. معالج الرسائل العادية
 # ==========================================
 @bot.message_handler(func=lambda m: m.text is not None and not m.text.startswith("/"))
 def handle_message(message):
@@ -432,8 +437,8 @@ def handle_message(message):
     if text in ("📚 المواد التعليمية", "📚 المواد الدراسية"):
         bot.send_message(
             chat_id,
-            "📅 اختر الفصل الدراسي:",
-            reply_markup=get_semesters_inline("stud_sem")
+            "📚 اختر المادة التعليمية:",
+            reply_markup=get_subjects_inline("sub")
         )
         return
 
@@ -469,23 +474,22 @@ def handle_message(message):
 
     state = user_states.get(chat_id)
 
-    if state == "add_doctor":
+    # استقبال إجابات أسئلة الأدمن متسلسلة
+    if state == "admin_add_doctor":
         user_data[chat_id]["doctor"] = "" if text == "لا يوجد" else text
-        ask_next_content_field(chat_id, "subject")
+        ask_next_admin_field(chat_id, "title")
         return
-    if state == "add_subject":
-        user_data[chat_id]["subject"] = text
-        ask_next_content_field(chat_id, "title")
-        return
-    if state == "add_title":
+
+    if state == "admin_add_title":
         user_data[chat_id]["title"] = text
-        ask_next_content_field(chat_id, "notes")
+        ask_next_admin_field(chat_id, "notes")
         return
-    if state == "add_notes":
+
+    if state == "admin_add_notes":
         user_data[chat_id]["notes"] = "" if text == "لا يوجد" else text
-        user_states[chat_id] = "add_payload"
-        ask_next_content_field(chat_id, "payload")
+        ask_next_admin_field(chat_id, "payload")
         return
+
     if state == "ask_question":
         save_question(message)
         return
@@ -495,9 +499,13 @@ def handle_message(message):
             return
         if text == "➕ إضافة محتوى":
             user_data[chat_id] = {}
-            ask_next_content_field(chat_id, "doctor")
+            bot.send_message(
+                chat_id,
+                "📚 **اختر المادة التي تريد إضافة محتوى إليها:**",
+                reply_markup=get_subjects_inline("admin_sub")
+            )
         elif text == "📋 عرض المحتوى":
-            bot.send_message(chat_id, "يمكنك استعراض المحتوى مباشرة عبر أزرار المواد والصفوف.")
+            bot.send_message(chat_id, "يمكنك استعراض المحتوى المضاف مباشرة عبر أزرار المواد من القائمة الرئيسية.")
         elif text == "💬 أسئلة الطلاب":
             with connect_db() as conn:
                 rows = conn.execute("SELECT id, user_id, question, status FROM questions ORDER BY id DESC LIMIT 20").fetchall()
