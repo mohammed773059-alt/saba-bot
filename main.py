@@ -69,7 +69,7 @@ HOME_ITEMS = [
     "❓ طرح السؤال",
     "💬 متابعة السؤال",
     "🔔 التذكيرات",
-    "👨‍💻 المطور"
+    "👨‍💻 مطور البوت"
 ]
 
 user_states = {}
@@ -157,7 +157,9 @@ def send_home(chat_id):
     user_data.pop(chat_id, None)
     bot.send_message(
         chat_id,
-        "🎓 مرحباً بك في مكتبة طلاب تقنية المعلومات بجامعة إقليم سبأ.\n\nاختر الخدمة التي تريدها:",
+        "🎓 كلية تكنولوجيا المعلومات\n"
+        "💻 قسم تكنولوجيا المعلومات (IT) - موازي\n\n"
+        "اختر الخدمة التي تريدها:",
         reply_markup=make_keyboard(HOME_ITEMS)
     )
 
@@ -198,7 +200,7 @@ def is_admin(message):
     return message.from_user.id == ADMIN_ID
 
 # ==========================================
-# 5. أوامر البوت
+# 5. أوامر وبداية البوت
 # ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -213,7 +215,7 @@ def admin_panel(message):
     user_states[message.chat.id] = "admin_menu"
     bot.send_message(
         message.chat.id,
-        "🔐 لوحة إدارة مكتبة الجامعة\n\nاختر العملية المطلوبة:",
+        "🔐 لوحة إدارة مكتبة الكلية\n\nاختر العملية المطلوبة:",
         reply_markup=make_keyboard([
             "➕ إضافة محتوى",
             "➕ إضافة مادة",
@@ -230,17 +232,14 @@ def begin_add_content(chat_id):
 
 def ask_next_content_field(chat_id, field):
     prompts = {
-        "doctor": "👨‍🏫 اكتب اسم الدكتور.\nإذا لم يوجد، اكتب: لا يوجد",
+        "doctor": "👨‍🏫 اكتب اسم الدكتور:\nإذا لم يوجد، اكتب: لا يوجد",
         "subject": "📚 اكتب اسم المادة الدراسية:",
-        "title": "📝 اكتب عنوان المحاضرة أو المحتوى:",
-        "notes": "📌 اكتب الملاحظات، أو اكتب: لا يوجد",
-        "payload": "📎 أرسل المحتوى الآن.\n\nيمكنك إرسال ملف أو فيديو أو صورة أو نص أو رابط."
+        "title": "📝 اكتب عنوان المحتوى أو المحاضرة:",
+        "notes": "📌 اكتب ملاحظاتك:\nإذا لم يوجد، اكتب: لا يوجد",
+        "payload": "📎 أرسل المحتوى الآن (ملف PDF، فيديو، صورة، نص، أو أي مرفق)."
     }
     user_states[chat_id] = "add_" + field
     bot.send_message(chat_id, prompts[field])
-
-def begin_add_payload(chat_id):
-    ask_next_content_field(chat_id, "payload")
 
 def save_content(chat_id, content_type, file_id="", text_content=""):
     data = user_data.get(chat_id, {})
@@ -265,11 +264,10 @@ def save_content(chat_id, content_type, file_id="", text_content=""):
 
     bot.send_message(
         chat_id,
-        "✅ تمت إضافة المحتوى بنجاح!\n\n"
+        "✅ تم إدراج المحتوى بنجاح!\n\n"
         f"📚 المادة: {data['subject']}\n"
         f"📂 القسم: {data['category']}\n"
-        f"📝 العنوان: {data['title']}\n\n"
-        "أصبح المحتوى محفوظاً في المكتبة."
+        f"📝 العنوان: {data['title']}"
     )
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
@@ -390,6 +388,50 @@ def admin_answer(message):
     bot.send_message(row["user_id"], f"💬 تمت الإجابة عن سؤالك رقم {question_id}:\n\n{answer}")
     bot.reply_to(message, "✅ تم إرسال الإجابة للطالب.")
 
+def show_saved_content_list(chat_id, semester, subject, category):
+    with connect_db() as conn:
+        rows = conn.execute("""
+            SELECT * FROM content
+            WHERE semester = ? AND subject = ? AND category = ?
+            ORDER BY id DESC
+        """, (semester, subject, category)).fetchall()
+    
+    if not rows:
+        bot.send_message(chat_id, f"📭 لا يوجد محتوى مضاف حالياً في قسم ({category}) للمادة ({subject}).")
+        return
+
+    for item in rows:
+        text = f"📚 المادة: {item['subject']}\n📂 القسم: {item['category']}\n📝 العنوان: {item['title']}\n"
+        if item["doctor"]:
+            text += f"👨‍🏫 الدكتور: {item['doctor']}\n"
+        if item["notes"]:
+            text += f"📌 ملاحظات: {item['notes']}\n"
+
+        ctype = item["content_type"]
+        if ctype == "text":
+            bot.send_message(chat_id, text + "\n" + item["text_content"])
+        elif ctype == "document":
+            bot.send_document(chat_id, item["file_id"], caption=text)
+        elif ctype == "video":
+            bot.send_video(chat_id, item["file_id"], caption=text)
+        elif ctype == "photo":
+            bot.send_photo(chat_id, item["file_id"], caption=text)
+        elif ctype == "audio":
+            bot.send_audio(chat_id, item["file_id"], caption=text)
+        elif ctype == "voice":
+            bot.send_voice(chat_id, item["file_id"])
+            bot.send_message(chat_id, text)
+        elif ctype == "animation":
+            bot.send_animation(chat_id, item["file_id"], caption=text)
+        elif ctype == "video_note":
+            bot.send_video_note(chat_id, item["file_id"])
+            bot.send_message(chat_id, text)
+        else:
+            bot.send_message(chat_id, text + "\n" + item["text_content"])
+
+# ==========================================
+# معالج الرسائل والقوائم التفاعلية
+# ==========================================
 @bot.message_handler(func=lambda m: m.text is not None and not m.text.startswith("/"))
 def handle_message(message):
     chat_id = message.chat.id
@@ -397,48 +439,38 @@ def handle_message(message):
     if text.lower() == "admin":
         return
 
-    # ------------------------------------------
-    # أزرار القائمة الرئيسية للطلاب
-    # ------------------------------------------
+    # 1. القائمة الرئيسية السفلية للطلاب
     if text == "📚 المواد الدراسية":
         send_semesters(chat_id, "student_semester")
         return
-
     elif text == "📎 الملحقات":
         send_semesters(chat_id, "student_attachments_semester")
         return
-
     elif text == "📅 الجدول الدراسي":
         send_semesters(chat_id, "student_schedule_semester")
         return
-
     elif text == "🔔 التذكيرات":
         send_semesters(chat_id, "student_reminders_semester")
         return
-
     elif text == "❓ طرح السؤال":
         user_states[chat_id] = "ask_question"
-        bot.send_message(chat_id, "اكتب سؤالك الآن وسيقوم الأدمن بالرد عليك:")
+        bot.send_message(chat_id, "اكتب سؤالك الآن وسيتم إرساله إلى إدارة البوت:")
         return
-
     elif text == "💬 متابعة السؤال":
         show_my_questions(message)
         return
-
-    elif text == "👨‍💻 المطور":
+    elif text == "👨‍💻 مطور البوت":
         bot.send_message(
             chat_id,
             "👨‍💻 **مطور البوت:**\n"
             "المهندس / محمد الظاهر\n\n"
-            "مخصص لخدمة طلاب تقنية المعلومات بجامعة إقليم سبأ."
+            "مخصص لخدمة طلاب كلية تكنولوجيا المعلومات - قسم (IT) موازي بجامعة إقليم سبأ."
         )
         return
 
-    # ------------------------------------------
-    # الحالات المخزنة للمستخدم
-    # ------------------------------------------
     state = user_states.get(chat_id)
 
+    # 2. خطوات إضافة المحتوى للأدمن
     if state == "add_doctor":
         user_data[chat_id]["doctor"] = "" if text == "لا يوجد" else text
         ask_next_content_field(chat_id, "subject")
@@ -477,12 +509,12 @@ def handle_message(message):
             list_content(chat_id)
         elif text == "🗑 حذف محتوى":
             user_states[chat_id] = "delete_content"
-            bot.send_message(chat_id, "أرسل رقم المحتوى الذي تريد حذفه.")
+            bot.send_message(chat_id, "أرسل رقم المحتوى الذي تريد حذفه:")
         elif text == "💬 أسئلة الطلاب":
             with connect_db() as conn:
                 rows = conn.execute("SELECT id, user_id, question, status FROM questions ORDER BY id DESC LIMIT 20").fetchall()
             if not rows:
-                bot.send_message(chat_id, "لا توجد أسئلة.")
+                bot.send_message(chat_id, "لا توجد أسئلة حالياً.")
             else:
                 for row in rows:
                     bot.send_message(chat_id, f"السؤال رقم: {row['id']}\nالطالب: {row['user_id']}\nالحالة: {row['status']}\n\n{row['question']}\n\nللرد:\nرد {row['id']} نص الإجابة")
@@ -490,6 +522,7 @@ def handle_message(message):
             send_home(chat_id)
         return
 
+    # 3. اختيار الفصل الدراسي
     if state in (
         "student_semester",
         "student_attachments_semester",
@@ -502,7 +535,7 @@ def handle_message(message):
             send_home(chat_id)
             return
         if text not in ("الفصل الدراسي الأول", "الفصل الدراسي الثاني"):
-            bot.send_message(chat_id, "اختر أحد الفصلين من القائمة.")
+            bot.send_message(chat_id, "الرجاء اختيار أحد الفصلين من القائمة المتاحة.")
             return
 
         user_data.setdefault(chat_id, {})
@@ -513,18 +546,22 @@ def handle_message(message):
             ask_next_content_field(chat_id, "doctor")
         elif state == "admin_new_subject_semester":
             user_states[chat_id] = "new_subject_name"
-            bot.send_message(chat_id, "اكتب اسم المادة الجديدة:")
+            bot.send_message(chat_id, "اكتب اسم المادة الدراسية الجديدة:")
         elif state == "student_semester":
-            show_subjects(chat_id, text, "student_subject")
+            user_states[chat_id] = "student_choose_subject"
+            show_subjects(chat_id, text, "student_choose_subject")
+        return
 
-# ==========================================
-# 6. التشغيل
-# ==========================================
-def start_bot():
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    # 4. تصفح المواد والأقسام للطالب
+    if state == "student_choose_subject":
+        if text == "⬅️ رجوع للقائمة":
+            send_home(chat_id)
+            return
+        user_data[chat_id]["subject"] = text
+        show_categories(chat_id, "student_choose_category")
+        return
 
-if __name__ == "__main__":
-    bot_thread = threading.Thread(target=start_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
-    run_flask()
+    if state == "student_choose_category":
+        if text == "⬅️ رجوع للمواد":
+            semester = user_data.get(chat_id, {}).get("semester", "الفصل الدراسي الأول")
+            show_subjects(chat_id, semester, "student_cho
