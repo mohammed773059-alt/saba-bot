@@ -312,7 +312,7 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # عند اختيار الطالب للقسم، نعرض له أزرار شفافة بأسماء العناوين (المحاضرات) فقط
+    # عند اختيار الطالب للقسم
     if data.startswith("cat_"):
         category_name = data.replace("cat_", "")
         user_data.setdefault(chat_id, {})["category"] = category_name
@@ -325,15 +325,26 @@ def handle_callback(call):
                 ORDER BY id DESC
             """, (subject, category_name)).fetchall()
 
+        # إرسال رسالة عادية في الشات في حال لا يوجد محتوى بدلاً من نافذة Popup
         if not rows:
-            bot.answer_callback_query(call.id, "لا توجد محتويات مضافة بعد في هذا القسم.", show_alert=True)
+            back_cats_markup = InlineKeyboardMarkup()
+            back_cats_markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
+            back_cats_markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+            
+            bot.edit_message_text(
+                f"📂 **{category_name}** - {subject}\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**",
+                chat_id=chat_id,
+                message_id=call.message.message_id,
+                reply_markup=back_cats_markup
+            )
+            bot.answer_callback_query(call.id)
             return
 
         markup = InlineKeyboardMarkup()
         for row in rows:
             markup.add(InlineKeyboardButton(f"📄 {row['title']}", callback_data=f"item_{row['id']}"))
         
-        markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data=f"back_to_cats"))
+        markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data="back_to_cats"))
         markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
 
         bot.edit_message_text(
@@ -356,7 +367,7 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # عند النقر على عنوان محاضرة معينة، يتم جلبها وإرسالها وحدها مع زر رجوع
+    # عرض المحتوى الفردي
     if data.startswith("item_"):
         item_id = int(data.split("_")[1])
 
@@ -364,7 +375,7 @@ def handle_callback(call):
             item = conn.execute("SELECT * FROM content WHERE id = ?", (item_id,)).fetchone()
 
         if not item:
-            bot.answer_callback_query(call.id, "عذراً، هذا المحتوى غير موجود.", show_alert=True)
+            bot.answer_callback_query(call.id, "عذراً، هذا المحتوى غير موجود.")
             return
 
         text = f"📚 **المادة:** {item['subject']}\n📂 **القسم:** {item['category']}\n📝 **العنوان:** {item['title']}\n"
@@ -435,8 +446,10 @@ def handle_text(message):
         bot.send_message(
             chat_id,
             "👨‍💻 **مطور البوت:**\n"
-            "المهندس / محمد الظاهر\n\n"
-            "مخصص لخدمة طلاب كلية تكنولوجيا المعلومات - قسم (IT) موازي بجامعة إقليم سبأ."
+            "المهندس / محمد الظاهر\n"
+            "📞 **رقم التواصل:** `718117501`\n\n"
+            "مخصص لخدمة طلاب كلية تكنولوجيا المعلومات - قسم (IT) موازي بجامعة إقليم سبأ.",
+            parse_mode="Markdown"
         )
         return
 
