@@ -566,4 +566,4 @@ def handle_callback(call):
     if data.startswith("lec_"):
         lecture_title = data.replace("lec_", "")
         user_data.setdefault(chat_id, {})["current_lecture"] = lecture_title
-        subject = user_data.get(chat_id,
+        subject = user_data.get(chat_id,)
