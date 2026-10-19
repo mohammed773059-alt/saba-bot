@@ -5,7 +5,20 @@ import telebot
 from flask import Flask
 
 # ==========================================
-# إعدادات البوت وقاعدة البيانات
+# 1. إعداد خادم ويب لـ Render
+# ==========================================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running online!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# ==========================================
+# 2. إعدادات البوت وقاعدة البيانات
 # ==========================================
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID_RAW = os.getenv("ADMIN_USER_ID", "0")
@@ -542,13 +555,4 @@ def handle_callback(call):
             available_cats = conn.execute("""
                 SELECT DISTINCT category FROM content
                 WHERE subject = ? AND title = ?
-            """, (subject, lecture_title)).fetchall()
-
-        cat_names = [r["category"] for r in available_cats]
-
-        markup = telebot.types.InlineKeyboardMarkup()
-        cat_icons = {
-            "المحاضرات": "📄 ملف المحاضرة (PDF/نص)",
-            "شروحات فيديو": "🎥 فيديو الشرح",
-            "التكاليف": "📝 التكليف",
-       
+            """, (subj
