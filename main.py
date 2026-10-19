@@ -6,9 +6,6 @@ import telebot
 from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-# ==========================================
-# 1. خادم ويب لتشغيل البوت على Render
-# ==========================================
 app = Flask(__name__)
 
 @app.route('/')
@@ -19,9 +16,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
-# ==========================================
-# 2. إعدادات البوت والقيم الأساسية
-# ==========================================
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_USER_ID", "")
 
@@ -75,9 +69,6 @@ HOME_ITEMS = [
 user_states = {}
 user_data = {}
 
-# ==========================================
-# 3. قاعدة البيانات
-# ==========================================
 def connect_db():
     conn = sqlite3.connect(DB_FILE, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -143,9 +134,6 @@ def init_db():
 
 init_db()
 
-# ==========================================
-# 4. القوائم والواجهات
-# ==========================================
 def make_keyboard(items, columns=2):
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=columns)
     for i in range(0, len(items), columns):
@@ -199,9 +187,6 @@ def show_categories(chat_id, purpose):
 def is_admin(message):
     return message.from_user.id == ADMIN_ID
 
-# ==========================================
-# 5. أوامر وبداية البوت
-# ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
     send_home(message.chat.id)
@@ -429,9 +414,6 @@ def show_saved_content_list(chat_id, semester, subject, category):
         else:
             bot.send_message(chat_id, text + "\n" + item["text_content"])
 
-# ==========================================
-# معالج الرسائل والقوائم التفاعلية
-# ==========================================
 @bot.message_handler(func=lambda m: m.text is not None and not m.text.startswith("/"))
 def handle_message(message):
     chat_id = message.chat.id
@@ -439,7 +421,6 @@ def handle_message(message):
     if text.lower() == "admin":
         return
 
-    # 1. القائمة الرئيسية السفلية للطلاب
     if text == "📚 المواد الدراسية":
         send_semesters(chat_id, "student_semester")
         return
@@ -470,7 +451,6 @@ def handle_message(message):
 
     state = user_states.get(chat_id)
 
-    # 2. خطوات إضافة المحتوى للأدمن
     if state == "add_doctor":
         user_data[chat_id]["doctor"] = "" if text == "لا يوجد" else text
         ask_next_content_field(chat_id, "subject")
@@ -522,7 +502,6 @@ def handle_message(message):
             send_home(chat_id)
         return
 
-    # 3. اختيار الفصل الدراسي
     if state in (
         "student_semester",
         "student_attachments_semester",
@@ -552,7 +531,6 @@ def handle_message(message):
             show_subjects(chat_id, text, "student_choose_subject")
         return
 
-    # 4. تصفح المواد والأقسام للطالب
     if state == "student_choose_subject":
         if text == "⬅️ رجوع للقائمة":
             send_home(chat_id)
@@ -564,4 +542,24 @@ def handle_message(message):
     if state == "student_choose_category":
         if text == "⬅️ رجوع للمواد":
             semester = user_data.get(chat_id, {}).get("semester", "الفصل الدراسي الأول")
-            show_subjects(chat_id, semester, "student_cho
+            show_subjects(chat_id, semester, "student_choose_subject")
+            return
+        if text not in CATEGORIES:
+            bot.send_message(chat_id, "اختر قسماً صحيحاً من القائمة.")
+            return
+        
+        user_data[chat_id]["category"] = text
+        semester = user_data[chat_id]["semester"]
+        subject = user_data[chat_id]["subject"]
+        
+        show_saved_content_list(chat_id, semester, subject, text)
+        return
+
+def start_bot():
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+
+if __name__ == "__main__":
+    bot_thread = threading.Thread(target=start_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+    run_flask()
