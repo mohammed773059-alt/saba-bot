@@ -136,13 +136,17 @@ def make_reply_keyboard(items, columns=2):
 def send_home(chat_id):
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
-    bot.send_message(
-        chat_id,
-        "🎓 **كلية تكنولوجيا المعلومات**\n"
-        "💻 **قسم تكنولوجيا المعلومات (IT) - موازي**\n\n"
-        "اختر الخدمة التي تريدها:",
-        reply_markup=make_reply_keyboard(HOME_ITEMS)
-    )
+    try:
+        bot.send_message(
+            chat_id,
+            "🎓 **كلية تكنولوجيا المعلومات**\n"
+            "💻 **قسم تكنولوجيا المعلومات (IT) - موازي**\n\n"
+            "اختر الخدمة التي تريدها:",
+            reply_markup=make_reply_keyboard(HOME_ITEMS),
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
 
 def is_admin(user_id):
     return ADMIN_ID == 0 or user_id == ADMIN_ID
@@ -173,7 +177,7 @@ def get_categories_inline(prefix="cat"):
     return markup
 
 # ==========================================
-# 5. أوامر ووظائف الأسئلة والإدارة
+# 5. الأوامر ولوحة الإدارة والأسئلة
 # ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -201,7 +205,7 @@ def ask_admin_field(chat_id, field):
         "payload": "📎 **أرسل المحتوى الآن:**\n(ملف PDF، فيديو، صورة، رابط، نص، أو تسجيل صوتي)"
     }
     user_states[chat_id] = "admin_add_" + field
-    bot.send_message(chat_id, prompts[field])
+    bot.send_message(chat_id, prompts[field], parse_mode="Markdown")
 
 def save_content_db(chat_id, content_type, file_id="", text_content=""):
     data = user_data.get(chat_id, {})
@@ -230,12 +234,12 @@ def save_content_db(chat_id, content_type, file_id="", text_content=""):
         f"📂 **القسم:** {data.get('category')}\n"
         f"👨‍🏫 **الدكتور:** {data.get('doctor') or 'غير محدد'}\n\n"
         "ماذا تريد أن تفعل الآن؟",
-        reply_markup=make_reply_keyboard(ADMIN_AFTER_SAVE_ITEMS)
+        reply_markup=make_reply_keyboard(ADMIN_AFTER_SAVE_ITEMS),
+        parse_mode="Markdown"
     )
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
 
-# حفظ سؤال الطالب وإرسال إشعار للأدمن
 def save_user_question(message):
     chat_id = message.chat.id
     q_text = message.text or ""
@@ -256,7 +260,6 @@ def save_user_question(message):
         parse_mode="Markdown"
     )
 
-    # إرسال السؤال للأدمن
     if ADMIN_ID != 0:
         try:
             bot.send_message(
@@ -273,7 +276,6 @@ def save_user_question(message):
 
     user_states.pop(chat_id, None)
 
-# استعراض أسئلة الطالب
 def show_user_questions(message):
     chat_id = message.chat.id
     with connect_db() as conn:
@@ -294,7 +296,6 @@ def show_user_questions(message):
             msg += f"\n💬 **الإجابة:**\n{row['answer']}"
         bot.send_message(chat_id, msg, parse_mode="Markdown")
 
-# رد الأدمن على سؤال
 @bot.message_handler(func=lambda m: m.text is not None and m.text.startswith("رد "))
 def reply_to_question(message):
     if not is_admin(message.from_user.id):
@@ -302,7 +303,7 @@ def reply_to_question(message):
 
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3 or not parts[1].isdigit():
-        bot.reply_to(message, "⚠️ **صيغة الرد الخاطئة!**\nالصيغة الصحيحة هي:\n`رد رقم_السؤال نص الإجابة`", parse_mode="Markdown")
+        bot.reply_to(message, "⚠️ **صيغة الرد الخاطئة!**\nالصيغة الصحيحة:\n`رد رقم_السؤال نص الإجابة`", parse_mode="Markdown")
         return
 
     q_id = int(parts[1])
@@ -320,13 +321,13 @@ def reply_to_question(message):
             WHERE id = ?
         """, (ans_text, q_id))
 
-    # إشعار الطالب بالإجابة
     try:
         bot.send_message(
             q_row["user_id"],
             f"🔔 **تمت الإجابة على سؤالك رقم ({q_id}):**\n\n"
             f"❓ **السؤال:** {q_row['question']}\n\n"
-            f"💬 **الإجابة:**\n{ans_text}"
+            f"💬 **الإجابة:**\n{ans_text}",
+            parse_mode="Markdown"
         )
         bot.reply_to(message, "✅ تم إرسال الإجابة إلى الطالب بنجاح!")
     except Exception:
@@ -366,7 +367,8 @@ def receive_payload(message):
         bot.send_message(
             chat_id,
             "✅ **تم تحديث ورفع الجدول الدراسي بنجاح!**",
-            reply_markup=make_reply_keyboard(ADMIN_MENU_ITEMS)
+            reply_markup=make_reply_keyboard(ADMIN_MENU_ITEMS),
+            parse_mode="Markdown"
         )
         user_states.pop(chat_id, None)
         return
@@ -391,7 +393,7 @@ def receive_payload(message):
     elif message.content_type == "video_note":
         file_id = message.video_note.file_id
 
-    save_content_db(message.chat.id, message.content_type, file_id=file_id)
+    save_content_db(chat_id, message.content_type, file_id=file_id)
 
 # ==========================================
 # 6. الأزرار التفاعلية (Callback Query)
@@ -564,7 +566,4 @@ def handle_callback(call):
     if data.startswith("lec_"):
         lecture_title = data.replace("lec_", "")
         user_data.setdefault(chat_id, {})["current_lecture"] = lecture_title
-        subject = user_data.get(chat_id, {}).get("subject", "عام")
-
-        with connect_db() as conn:
-            available_
+        subject = user_data.get(chat_id,
