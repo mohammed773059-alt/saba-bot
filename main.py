@@ -4,9 +4,10 @@ import threading
 import time
 import telebot
 from flask import Flask
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 # ==========================================
-# 1. خادم ويب وهمي لإبقاء Render سعيداً
+# 1. خادم ويب لتشغيل البوت على Render
 # ==========================================
 app = Flask(__name__)
 
@@ -67,7 +68,8 @@ HOME_ITEMS = [
     "📅 الجدول الدراسي",
     "❓ طرح السؤال",
     "💬 متابعة السؤال",
-    "🔔 التذكيرات"
+    "🔔 التذكيرات",
+    "👨‍💻 المطور"
 ]
 
 user_states = {}
@@ -144,8 +146,6 @@ init_db()
 # ==========================================
 # 4. القوائم والواجهات
 # ==========================================
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-
 def make_keyboard(items, columns=2):
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=columns)
     for i in range(0, len(items), columns):
@@ -359,6 +359,18 @@ def save_question(message):
     bot.send_message(ADMIN_ID, f"❓ سؤال جديد رقم {question_id}\nمن المستخدم: {message.from_user.id}\nاسم المستخدم: @{message.from_user.username or 'غير محدد'}\n\n{question}\n\nللرد اكتب:\nرد {question_id} ثم مسافة ثم نص الإجابة.")
     user_states.pop(chat_id, None)
 
+def show_my_questions(message):
+    with connect_db() as conn:
+        rows = conn.execute("SELECT id, question, answer, status FROM questions WHERE user_id = ? ORDER BY id DESC LIMIT 15", (message.from_user.id,)).fetchall()
+    if not rows:
+        bot.send_message(message.chat.id, "ليس لديك أسئلة مسجلة حتى الآن.")
+        return
+    for row in rows:
+        text = f"❓ السؤال رقم {row['id']}\n{row['question']}\n\nالحالة: {row['status']}"
+        if row["answer"]:
+            text += f"\n\n💬 الإجابة:\n{row['answer']}"
+        bot.send_message(message.chat.id, text)
+
 @bot.message_handler(func=lambda m: m.text is not None and m.text.startswith("رد "))
 def admin_answer(message):
     if not is_admin(message):
@@ -385,6 +397,46 @@ def handle_message(message):
     if text.lower() == "admin":
         return
 
+    # ------------------------------------------
+    # أزرار القائمة الرئيسية للطلاب
+    # ------------------------------------------
+    if text == "📚 المواد الدراسية":
+        send_semesters(chat_id, "student_semester")
+        return
+
+    elif text == "📎 الملحقات":
+        send_semesters(chat_id, "student_attachments_semester")
+        return
+
+    elif text == "📅 الجدول الدراسي":
+        send_semesters(chat_id, "student_schedule_semester")
+        return
+
+    elif text == "🔔 التذكيرات":
+        send_semesters(chat_id, "student_reminders_semester")
+        return
+
+    elif text == "❓ طرح السؤال":
+        user_states[chat_id] = "ask_question"
+        bot.send_message(chat_id, "اكتب سؤالك الآن وسيقوم الأدمن بالرد عليك:")
+        return
+
+    elif text == "💬 متابعة السؤال":
+        show_my_questions(message)
+        return
+
+    elif text == "👨‍💻 المطور":
+        bot.send_message(
+            chat_id,
+            "👨‍💻 **مطور البوت:**\n"
+            "المهندس / محمد الظاهر\n\n"
+            "مخصص لخدمة طلاب تقنية المعلومات بجامعة إقليم سبأ."
+        )
+        return
+
+    # ------------------------------------------
+    # الحالات المخزنة للمستخدم
+    # ------------------------------------------
     state = user_states.get(chat_id)
 
     if state == "add_doctor":
@@ -466,16 +518,13 @@ def handle_message(message):
             show_subjects(chat_id, text, "student_subject")
 
 # ==========================================
-# 6. التشغيل المزدوج (Flask + TeleBot)
+# 6. التشغيل
 # ==========================================
 def start_bot():
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
 
 if __name__ == "__main__":
-    # تشغيل البوت في Thread خلفي
     bot_thread = threading.Thread(target=start_bot)
     bot_thread.daemon = True
     bot_thread.start()
-
-    # تشغيل سيرفر Flask ليسمح لـ Render بالتحقق من الخدمة
     run_flask()
