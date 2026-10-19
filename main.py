@@ -179,7 +179,6 @@ def make_reply_keyboard(items, columns=2):
 
 
 def is_admin(user_id):
-    # لا يسمح بالدخول عند عدم ضبط رقم المدير.
     return ADMIN_ID != 0 and user_id == ADMIN_ID
 
 
@@ -757,8 +756,9 @@ def handle_callback(call):
                             callback_data="back_to_attachments_subjects"
                         )
                     )
-
                     markup.add(
                         InlineKeyboardButton(
                             "🏠 القائمة الرئيسية",
-                            callback_data="go_
+                            callback_data="go_home"
+                        )
+               
