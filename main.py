@@ -3,24 +3,8 @@ import sqlite3
 import threading
 import time
 import telebot
-from flask import Flask
+
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-
-# ==========================================
-# إعدادات خادم الويب لبقاء البوت نشطاً على Render
-# ==========================================
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_web():
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-
-def keep_alive():
-    t = threading.Thread(target=run_web)
-    t.start()
 
 # ==========================================
 # إعدادات البوت
@@ -787,8 +771,22 @@ def handle_message(message):
 
         return
 
+    # اختيار الفصل الدراسي
     if state in (
         "student_semester",
         "student_attachments_semester",
         "student_schedule_semester",
-        "stude
+        "student_reminders_semester",
+        "admin_choose_semester",
+        "admin_new_subject_semester"
+    ):
+        if text == "⬅️ رجوع للقائمة":
+            send_home(chat_id)
+            return
+
+        if text not in (
+            "الفصل الدراسي الأول",
+            "الفصل الدراسي الثاني"
+        ):
+            bot.send_message(chat_id, "اختر أحد الفصلين من القائمة.")
+  
