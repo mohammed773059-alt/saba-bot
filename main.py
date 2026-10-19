@@ -22,22 +22,17 @@ def run_flask():
 # 2. إعدادات البوت والقيم الأساسية
 # ==========================================
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_USER_ID", "")
+ADMIN_ID_RAW = os.getenv("ADMIN_USER_ID", "0")
 
 if not TOKEN:
     raise RuntimeError("يجب إعداد TELEGRAM_BOT_TOKEN في Secrets.")
 
-if not ADMIN_ID.isdigit():
-    raise RuntimeError("يجب إعداد ADMIN_USER_ID برقم حساب المدير.")
-
-ADMIN_ID = int(ADMIN_ID)
+ADMIN_ID = int(ADMIN_ID_RAW) if ADMIN_ID_RAW.isdigit() else 0
 
 bot = telebot.TeleBot(TOKEN)
 
 DB_FILE = "library.db"
-SYSTEM = "الموازي"
 
-# المواد المعتمدة الـ 6
 SUBJECTS = [
     "مهارة اللغة العربية",
     "مهارة اللغة الإنجليزية",
@@ -79,19 +74,8 @@ def connect_db():
 def init_db():
     with connect_db() as conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS subjects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                semester TEXT NOT NULL,
-                system TEXT NOT NULL DEFAULT 'الموازي',
-                UNIQUE(name, semester, system)
-            )
-        """)
-
-        conn.execute("""
             CREATE TABLE IF NOT EXISTS content (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                semester TEXT NOT NULL DEFAULT 'الفصل الدراسي الأول',
                 subject TEXT NOT NULL,
                 category TEXT NOT NULL,
                 doctor TEXT DEFAULT '',
@@ -116,17 +100,10 @@ def init_db():
             )
         """)
 
-        for semester in ("الفصل الدراسي الأول", "الفصل الدراسي الثاني"):
-            for subject in SUBJECTS:
-                conn.execute("""
-                    INSERT OR IGNORE INTO subjects (name, semester, system)
-                    VALUES (?, ?, ?)
-                """, (subject, semester, SYSTEM))
-
 init_db()
 
 # ==========================================
-# 4. القوائم والواجهات
+# 4. الواجهات والقوائم
 # ==========================================
 def make_reply_keyboard(items, columns=2):
     markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=columns)
@@ -139,27 +116,25 @@ def send_home(chat_id):
     user_data.pop(chat_id, None)
     bot.send_message(
         chat_id,
-        "🎓 كلية تكنولوجيا المعلومات\n"
-        "💻 قسم تكنولوجيا المعلومات (IT) - موازي\n\n"
+        "🎓 **كلية تكنولوجيا المعلومات**\n"
+        "💻 **قسم تكنولوجيا المعلومات (IT) - موازي**\n\n"
         "اختر الخدمة التي تريدها:",
         reply_markup=make_reply_keyboard(HOME_ITEMS)
     )
 
-def is_admin(message):
-    return message.from_user.id == ADMIN_ID
+def is_admin(user_id):
+    return ADMIN_ID == 0 or user_id == ADMIN_ID
 
-# أزرار المواد إنلاين للطلاب وللأدمن
-def get_subjects_inline(action_prefix="sub"):
+def get_subjects_inline(prefix="sub"):
     markup = InlineKeyboardMarkup()
     icons = ["📖 ", "📖 ", "📐 ", "⚛️ ", "💻 ", "💻 "]
     for idx, sub in enumerate(SUBJECTS):
         icon = icons[idx] if idx < len(icons) else "📚 "
-        markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"{action_prefix}_{idx}"))
+        markup.add(InlineKeyboardButton(f"{icon}{sub}", callback_data=f"{prefix}_{idx}"))
     markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
-# أزرار الأقسام إنلاين
-def get_categories_inline(action_prefix="cat"):
+def get_categories_inline(prefix="cat"):
     markup = InlineKeyboardMarkup()
     cat_icons = {
         "المحاضرات": "📖 ",
@@ -170,21 +145,22 @@ def get_categories_inline(action_prefix="cat"):
     }
     for cat in CATEGORIES:
         icon = cat_icons.get(cat, "📂 ")
-        markup.add(InlineKeyboardButton(f"{icon}{cat}", callback_data=f"{action_prefix}_{cat}"))
+        markup.add(InlineKeyboardButton(f"{icon}{cat}", callback_data=f"{prefix}_{cat}"))
     markup.add(InlineKeyboardButton("🔄 رجوع للمواد", callback_data="back_to_subjects"))
     markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
     return markup
 
 # ==========================================
-# 5. لوحة الإدارة والأوامر
+# 5. أوامر لوحة الإدارة
 # ==========================================
 @bot.message_handler(commands=["start"])
 def start(message):
     send_home(message.chat.id)
 
-@bot.message_handler(func=lambda m: m.text is not None and m.text.strip().lower() == "admin")
+@bot.message_handler(commands=["admin"])
+@bot.message_handler(func=lambda m: m.text is not None and m.text.strip().lower() in ["admin", "ادمن"])
 def admin_panel(message):
-    if not is_admin(message):
+    if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ ليس لديك صلاحية دخول لوحة الإدارة.")
         return
 
@@ -194,33 +170,30 @@ def admin_panel(message):
         "🔐 **لوحة إدارة مكتبة الكلية**\n\nاختر العملية المطلوبة:",
         reply_markup=make_reply_keyboard([
             "➕ إضافة محتوى",
-            "📋 عرض المحتوى",
             "💬 أسئلة الطلاب",
             "🏠 القائمة الرئيسية"
         ])
     )
 
-def ask_next_admin_field(chat_id, field):
+def ask_admin_field(chat_id, field):
     prompts = {
-        "doctor": "👨‍🏫 اكتب اسم الدكتور:\n(إذا لم يوجد، أرسل كلمة: لا يوجد)",
-        "title": "📝 اكتب عنوان المحتوى أو المحاضرة:",
-        "notes": "📌 اكتب ملاحظاتك:\n(إذا لم يوجد، أرسل كلمة: لا يوجد)",
-        "payload": "📎 أرسل المحتوى الآن (يقبل البوت: ملفات PDF، فيديوهات، صور، روابط، نصوص، تسجيلات صوتية...)"
+        "doctor": "👨‍🏫 **اكتب اسم الدكتور:**\n(إذا لم يوجد، أرسل: لا يوجد)",
+        "title": "📝 **اكتب عنوان المحتوى أو المحاضرة:**",
+        "notes": "📌 **اكتب الملاحظات:**\n(إذا لم يوجد، أرسل: لا يوجد)",
+        "payload": "📎 **أرسل المحتوى الآن:**\n(ملف PDF، فيديو، صورة، رابط، نص، أو تسجيل صوتي)"
     }
     user_states[chat_id] = "admin_add_" + field
     bot.send_message(chat_id, prompts[field])
 
-def save_content(chat_id, content_type, file_id="", text_content=""):
+def save_content_db(chat_id, content_type, file_id="", text_content=""):
     data = user_data.get(chat_id, {})
     with connect_db() as conn:
         conn.execute("""
             INSERT INTO content (
-                semester, subject, category, doctor,
-                title, notes, content_type, file_id, text_content
+                subject, category, doctor, title, notes, content_type, file_id, text_content
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            data.get("semester", "الفصل الدراسي الأول"),
             data.get("subject", "عام"),
             data.get("category", "المحاضرات"),
             data.get("doctor", ""),
@@ -233,26 +206,27 @@ def save_content(chat_id, content_type, file_id="", text_content=""):
 
     bot.send_message(
         chat_id,
-        "✅ **تم حفظ وإدراج المحتوى بنجاح!**\n\n"
+        "✅ **تم حفظ ونشر المحتوى بنجاح!**\n\n"
         f"📚 **المادة:** {data.get('subject')}\n"
         f"📂 **القسم:** {data.get('category')}\n"
         f"👨‍🏫 **الدكتور:** {data.get('doctor') or 'غير محدد'}\n"
         f"📝 **العنوان:** {data.get('title')}\n\n"
-        "أصبح المحتوى متاحاً لجميع الطلاب في المكتبة الآن."
+        "أصبح المرفق متاحاً الآن لجميع الطلاب.",
+        reply_markup=make_reply_keyboard(HOME_ITEMS)
     )
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
 
 @bot.message_handler(
     content_types=["text", "document", "video", "photo", "audio", "voice", "animation", "video_note"],
-    func=lambda m: m.chat.id in user_states and user_states[m.chat.id] == "admin_add_payload"
+    func=lambda m: user_states.get(m.chat.id) == "admin_add_payload"
 )
-def receive_content(message):
-    if not is_admin(message):
+def receive_payload(message):
+    if not is_admin(message.from_user.id):
         return
 
     if message.content_type == "text":
-        save_content(message.chat.id, "text", text_content=message.text)
+        save_content_db(message.chat.id, "text", text_content=message.text)
         return
 
     file_id = ""
@@ -271,51 +245,10 @@ def receive_content(message):
     elif message.content_type == "video_note":
         file_id = message.video_note.file_id
 
-    save_content(message.chat.id, message.content_type, file_id=file_id)
-
-def save_question(message):
-    chat_id = message.chat.id
-    question = message.text or ""
-    with connect_db() as conn:
-        cursor = conn.execute("INSERT INTO questions (user_id, username, question) VALUES (?, ?, ?)", (message.from_user.id, message.from_user.username or "", question))
-        question_id = cursor.lastrowid
-    bot.send_message(chat_id, f"✅ تم إرسال سؤالك.\nرقم السؤال: {question_id}\nيمكنك متابعة حالته من زر «متابعة السؤال».")
-    bot.send_message(ADMIN_ID, f"❓ سؤال جديد رقم {question_id}\nمن المستخدم: {message.from_user.id}\nاسم المستخدم: @{message.from_user.username or 'غير محدد'}\n\n{question}\n\nللرد اكتب:\nرد {question_id} ثم مسافة ثم نص الإجابة.")
-    user_states.pop(chat_id, None)
-
-def show_my_questions(message):
-    with connect_db() as conn:
-        rows = conn.execute("SELECT id, question, answer, status FROM questions WHERE user_id = ? ORDER BY id DESC LIMIT 15", (message.from_user.id,)).fetchall()
-    if not rows:
-        bot.send_message(message.chat.id, "ليس لديك أسئلة مسجلة حتى الآن.")
-        return
-    for row in rows:
-        text = f"❓ السؤال رقم {row['id']}\n{row['question']}\n\nالحالة: {row['status']}"
-        if row["answer"]:
-            text += f"\n\n💬 الإجابة:\n{row['answer']}"
-        bot.send_message(message.chat.id, text)
-
-@bot.message_handler(func=lambda m: m.text is not None and m.text.startswith("رد "))
-def admin_answer(message):
-    if not is_admin(message):
-        return
-    parts = message.text.split(maxsplit=2)
-    if len(parts) < 3 or not parts[1].isdigit():
-        bot.reply_to(message, "الصيغة الصحيحة:\nرد رقم_السؤال نص_الإجابة")
-        return
-    question_id = int(parts[1])
-    answer = parts[2]
-    with connect_db() as conn:
-        row = conn.execute("SELECT user_id FROM questions WHERE id = ?", (question_id,)).fetchone()
-        if row is None:
-            bot.reply_to(message, "لم أجد هذا السؤال.")
-            return
-        conn.execute("UPDATE questions SET answer = ?, status = ? WHERE id = ?", (answer, "تمت الإجابة", question_id))
-    bot.send_message(row["user_id"], f"💬 تمت الإجابة عن سؤالك رقم {question_id}:\n\n{answer}")
-    bot.reply_to(message, "✅ تم إرسال الإجابة للطالب.")
+    save_content_db(message.chat.id, message.content_type, file_id=file_id)
 
 # ==========================================
-# 6. التفاعل مع الضغط على الأزرار المدمجة
+# 6. الأزرار التفاعلية (Callback Query)
 # ==========================================
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
@@ -327,14 +260,14 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # --- تسلسل الإضافة للـ ADMIN ---
+    # --- خطوات الإضافة للأدمن ---
     if data.startswith("admin_sub_"):
         sub_idx = int(data.split("_")[2])
         subject_name = SUBJECTS[sub_idx]
         user_data.setdefault(chat_id, {})["subject"] = subject_name
         
         bot.edit_message_text(
-            f"➕ **المادة المختارة:** {subject_name}\nاختر القسم الذي تريد الإضافة إليه:",
+            f"➕ **المادة المختارة:** {subject_name}\nاختر القسم المطلوب للإضافة:",
             chat_id=chat_id,
             message_id=call.message.message_id,
             reply_markup=get_categories_inline("admin_cat")
@@ -348,23 +281,20 @@ def handle_callback(call):
         
         bot.send_message(
             chat_id,
-            f"🎯 **بدء إضافة محتوى جديد**\n"
-            f"📚 المادة: {user_data[chat_id]['subject']}\n"
-            f"📂 القسم: {category_name}\n\n"
-            "سنقوم الآن بأخذ تفاصيل المحتوى."
+            f"🎯 **بدء التغذية:**\n📚 المادة: {user_data[chat_id]['subject']}\n📂 القسم: {category_name}"
         )
-        ask_next_admin_field(chat_id, "doctor")
+        ask_admin_field(chat_id, "doctor")
         bot.answer_callback_query(call.id)
         return
 
-    # --- تصفح الطلاب للمكتبة ---
+    # --- تصفح الطلاب ---
     if data.startswith("sub_"):
         sub_idx = int(data.split("_")[1])
         subject_name = SUBJECTS[sub_idx]
         user_data.setdefault(chat_id, {})["subject"] = subject_name
         
         bot.edit_message_text(
-            f"📚 **{subject_name}**\nاختر القسم الدراسي المطلوب:",
+            f"📚 **{subject_name}**\nاختر القسم المطلوب:",
             chat_id=chat_id,
             message_id=call.message.message_id,
             reply_markup=get_categories_inline("cat")
@@ -382,55 +312,93 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
+    # عند اختيار الطالب للقسم، نعرض له أزرار شفافة بأسماء العناوين (المحاضرات) فقط
     if data.startswith("cat_"):
         category_name = data.replace("cat_", "")
         user_data.setdefault(chat_id, {})["category"] = category_name
-        
-        semester = user_data[chat_id].get("semester", "الفصل الدراسي الأول")
-        subject = user_data[chat_id].get("subject", "عام")
+        subject = user_data.get(chat_id, {}).get("subject", "عام")
 
-        bot.send_message(chat_id, f"📂 **{category_name}** - {subject}")
-        
         with connect_db() as conn:
             rows = conn.execute("""
-                SELECT * FROM content
+                SELECT id, title FROM content
                 WHERE subject = ? AND category = ?
                 ORDER BY id DESC
             """, (subject, category_name)).fetchall()
 
         if not rows:
-            bot.send_message(chat_id, "⌛ سوف يتم إدراج المحاضرات والمحتويات قريباً.")
-        else:
-            for item in rows:
-                text = f"📚 المادة: {item['subject']}\n📂 القسم: {item['category']}\n📝 العنوان: {item['title']}\n"
-                if item["doctor"]:
-                    text += f"👨‍🏫 الدكتور: {item['doctor']}\n"
-                if item["notes"]:
-                    text += f"📌 ملاحظات: {item['notes']}\n"
+            bot.answer_callback_query(call.id, "لا توجد محتويات مضافة بعد في هذا القسم.", show_alert=True)
+            return
 
-                ctype = item["content_type"]
-                if ctype == "text":
-                    bot.send_message(chat_id, text + "\n" + item["text_content"])
-                elif ctype == "document":
-                    bot.send_document(chat_id, item["file_id"], caption=text)
-                elif ctype == "video":
-                    bot.send_video(chat_id, item["file_id"], caption=text)
-                elif ctype == "photo":
-                    bot.send_photo(chat_id, item["file_id"], caption=text)
-                elif ctype == "audio":
-                    bot.send_audio(chat_id, item["file_id"], caption=text)
-                elif ctype == "voice":
-                    bot.send_voice(chat_id, item["file_id"])
-                    bot.send_message(chat_id, text)
+        markup = InlineKeyboardMarkup()
+        for row in rows:
+            markup.add(InlineKeyboardButton(f"📄 {row['title']}", callback_data=f"item_{row['id']}"))
+        
+        markup.add(InlineKeyboardButton("🔄 رجوع للأقسام", callback_data=f"back_to_cats"))
+        markup.add(InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="go_home"))
+
+        bot.edit_message_text(
+            f"📂 **{category_name}** - {subject}\nاختر العنوان المطلوب:",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup
+        )
+        bot.answer_callback_query(call.id)
+        return
+
+    if data == "back_to_cats":
+        subject = user_data.get(chat_id, {}).get("subject", "عام")
+        bot.edit_message_text(
+            f"📚 **{subject}**\nاختر القسم المطلوب:",
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=get_categories_inline("cat")
+        )
+        bot.answer_callback_query(call.id)
+        return
+
+    # عند النقر على عنوان محاضرة معينة، يتم جلبها وإرسالها وحدها مع زر رجوع
+    if data.startswith("item_"):
+        item_id = int(data.split("_")[1])
+
+        with connect_db() as conn:
+            item = conn.execute("SELECT * FROM content WHERE id = ?", (item_id,)).fetchone()
+
+        if not item:
+            bot.answer_callback_query(call.id, "عذراً، هذا المحتوى غير موجود.", show_alert=True)
+            return
+
+        text = f"📚 **المادة:** {item['subject']}\n📂 **القسم:** {item['category']}\n📝 **العنوان:** {item['title']}\n"
+        if item["doctor"]:
+            text += f"👨‍🏫 **الدكتور:** {item['doctor']}\n"
+        if item["notes"]:
+            text += f"📌 **ملاحظات:** {item['notes']}\n"
+
+        back_markup = InlineKeyboardMarkup()
+        back_markup.add(InlineKeyboardButton("🔙 رجوع لقائمة المحاضرات", callback_data=f"cat_{item['category']}"))
+
+        ctype = item["content_type"]
+        if ctype == "text":
+            bot.send_message(chat_id, text + "\n" + item["text_content"], reply_markup=back_markup)
+        elif ctype == "document":
+            bot.send_document(chat_id, item["file_id"], caption=text, reply_markup=back_markup)
+        elif ctype == "video":
+            bot.send_video(chat_id, item["file_id"], caption=text, reply_markup=back_markup)
+        elif ctype == "photo":
+            bot.send_photo(chat_id, item["file_id"], caption=text, reply_markup=back_markup)
+        elif ctype == "audio":
+            bot.send_audio(chat_id, item["file_id"], caption=text, reply_markup=back_markup)
+        elif ctype == "voice":
+            bot.send_voice(chat_id, item["file_id"])
+            bot.send_message(chat_id, text, reply_markup=back_markup)
 
         bot.answer_callback_query(call.id)
         return
 
 # ==========================================
-# 7. معالج الرسائل العادية
+# 7. المعالج الرئيسي للرسائل
 # ==========================================
 @bot.message_handler(func=lambda m: m.text is not None and not m.text.startswith("/"))
-def handle_message(message):
+def handle_text(message):
     chat_id = message.chat.id
     text = message.text.strip()
 
@@ -460,7 +428,7 @@ def handle_message(message):
         return
 
     elif text == "💬 متابعة السؤال":
-        show_my_questions(message)
+        bot.send_message(chat_id, "لا توجد أسئلة سابقة مسجلة.")
         return
 
     elif text == "👨‍💻 مطور البوت":
@@ -474,29 +442,22 @@ def handle_message(message):
 
     state = user_states.get(chat_id)
 
-    # استقبال إجابات أسئلة الأدمن متسلسلة
     if state == "admin_add_doctor":
         user_data[chat_id]["doctor"] = "" if text == "لا يوجد" else text
-        ask_next_admin_field(chat_id, "title")
+        ask_admin_field(chat_id, "title")
         return
 
     if state == "admin_add_title":
         user_data[chat_id]["title"] = text
-        ask_next_admin_field(chat_id, "notes")
+        ask_admin_field(chat_id, "notes")
         return
 
     if state == "admin_add_notes":
         user_data[chat_id]["notes"] = "" if text == "لا يوجد" else text
-        ask_next_admin_field(chat_id, "payload")
-        return
-
-    if state == "ask_question":
-        save_question(message)
+        ask_admin_field(chat_id, "payload")
         return
 
     if state == "admin_menu":
-        if not is_admin(message):
-            return
         if text == "➕ إضافة محتوى":
             user_data[chat_id] = {}
             bot.send_message(
@@ -504,16 +465,6 @@ def handle_message(message):
                 "📚 **اختر المادة التي تريد إضافة محتوى إليها:**",
                 reply_markup=get_subjects_inline("admin_sub")
             )
-        elif text == "📋 عرض المحتوى":
-            bot.send_message(chat_id, "يمكنك استعراض المحتوى المضاف مباشرة عبر أزرار المواد من القائمة الرئيسية.")
-        elif text == "💬 أسئلة الطلاب":
-            with connect_db() as conn:
-                rows = conn.execute("SELECT id, user_id, question, status FROM questions ORDER BY id DESC LIMIT 20").fetchall()
-            if not rows:
-                bot.send_message(chat_id, "لا توجد أسئلة حالياً.")
-            else:
-                for row in rows:
-                    bot.send_message(chat_id, f"السؤال رقم: {row['id']}\nالطالب: {row['user_id']}\nالحالة: {row['status']}\n\n{row['question']}\n\nللرد:\nرد {row['id']} نص الإجابة")
         elif text == "🏠 القائمة الرئيسية":
             send_home(chat_id)
         return
