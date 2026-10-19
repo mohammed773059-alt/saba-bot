@@ -407,7 +407,7 @@ def handle_all_messages(message):
             bot.send_message(chat_id, f"❓ سؤال #{r['id']}: {r['question']}\n📌 الحالة: {r['status']}\n💬 الإجابة: {r['answer'] or 'قيد المراجعة'}")
     elif text == "👨‍💻 مطور البوت":
         bot.send_message(chat_id, "👨‍💻 مطور البوت:\nالمهندس / محمد الظاهر\n📞 رقم التواصل: 718117501")
-    elif text == "➕ إضافة محتوى آخر" and is_admin(message.from_user.id):
+    elif text in ["➕ إضافة محتوى", "➕ إضافة محتوى آخر"] and is_admin(message.from_user.id):
         user_data[chat_id] = {}
         bot.send_message(chat_id, "📚 اختر المادة لإضافة المحتوى:", reply_markup=get_subjects_inline("admin_sub"))
     elif text in ["⚙️ لوحة الإدارة", "admin", "ادمن"] and is_admin(message.from_user.id):
@@ -423,7 +423,7 @@ def handle_all_messages(message):
         for q in q_rows:
             bot.send_message(chat_id, f"❓ سؤال #{q['id']} من ({q['user_id']}):\n{q['question']}\n\nللرد أرسل:\nرد {q['id']} الإجابة")
     elif text == "🏠 القائمة الرئيسية":
-        send_home(chat_id)
+        send_home(message.chat.id)
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
