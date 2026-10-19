@@ -60,6 +60,12 @@ HOME_ITEMS = [
     "👨‍💻 مطور البوت"
 ]
 
+ADMIN_AFTER_SAVE_ITEMS = [
+    "➕ إضافة محتوى آخر",
+    "⚙️ لوحة الإدارة",
+    "🏠 القائمة الرئيسية"
+]
+
 user_states = {}
 user_data = {}
 
@@ -158,7 +164,7 @@ def start(message):
     send_home(message.chat.id)
 
 @bot.message_handler(commands=["admin"])
-@bot.message_handler(func=lambda m: m.text is not None and m.text.strip().lower() in ["admin", "ادمن"])
+@bot.message_handler(func=lambda m: m.text is not None and m.text.strip().lower() in ["admin", "ادمن", "⚙️ لوحة الإدارة"])
 def admin_panel(message):
     if not is_admin(message.from_user.id):
         bot.send_message(message.chat.id, "⛔ ليس لديك صلاحية دخول لوحة الإدارة.")
@@ -204,6 +210,7 @@ def save_content_db(chat_id, content_type, file_id="", text_content=""):
             text_content
         ))
 
+    # إرسال أزرار خيارات سريعة للإضافة المباشرة دون الحاجة لكتابة admin من جديد
     bot.send_message(
         chat_id,
         "✅ **تم الحفظ والربط بنجاح!**\n\n"
@@ -211,8 +218,8 @@ def save_content_db(chat_id, content_type, file_id="", text_content=""):
         f"📖 **المحاضرة:** {data.get('title')}\n"
         f"📂 **النوع/القسم:** {data.get('category')}\n"
         f"👨‍🏫 **الدكتور:** {data.get('doctor') or 'غير محدد'}\n\n"
-        "تم ربط هذا المحتوى بالمحاضرة بنجاح ويمكن للطلاب التوصل إليه الآن.",
-        reply_markup=make_reply_keyboard(HOME_ITEMS)
+        "ماذا تريد أن تفعل الآن؟",
+        reply_markup=make_reply_keyboard(ADMIN_AFTER_SAVE_ITEMS)
     )
     user_states.pop(chat_id, None)
     user_data.pop(chat_id, None)
@@ -312,7 +319,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # عرض قائمة المحاضرات التابعة للمادة وقسم التصفح
     if data.startswith("cat_"):
         category_name = data.replace("cat_", "")
         user_data.setdefault(chat_id, {})["category"] = category_name
@@ -366,7 +372,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # عند النقر على محاضرة معينة (مثلاً المحاضرة الأولى)، يتم استعراض الأقسام المدرجة تحت هذه المحاضرة
     if data.startswith("lec_"):
         lecture_title = data.replace("lec_", "")
         user_data.setdefault(chat_id, {})["current_lecture"] = lecture_title
@@ -389,7 +394,6 @@ def handle_callback(call):
             "الملحقات": "📎 الملحقات"
         }
 
-        # إظهار الخيارات المتاحة والمربوطة بالمحاضرة فقط
         for c_name in CATEGORIES:
             if c_name in cat_names:
                 btn_text = cat_icons.get(c_name, c_name)
@@ -407,7 +411,6 @@ def handle_callback(call):
         bot.answer_callback_query(call.id)
         return
 
-    # عرض محتوى قسم معين داخل المحاضرة المحددة
     if data.startswith("showcontent_"):
         category_name = data.replace("showcontent_", "")
         subject = user_data.get(chat_id, {}).get("subject", "عام")
@@ -468,6 +471,16 @@ def handle_text(message):
             "📚 اختر المادة التعليمية:",
             reply_markup=get_subjects_inline("sub")
         )
+        return
+
+    elif text == "➕ إضافة محتوى آخر":
+        if is_admin(message.from_user.id):
+            user_data[chat_id] = {}
+            bot.send_message(
+                chat_id,
+                "📚 **اختر المادة التي تريد إضافة محتوى إليها:**",
+                reply_markup=get_subjects_inline("admin_sub")
+            )
         return
 
     elif text == "📎 الملحقات":
