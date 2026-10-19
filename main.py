@@ -555,4 +555,4 @@ def handle_callback(call):
             available_cats = conn.execute("""
                 SELECT DISTINCT category FROM content
                 WHERE subject = ? AND title = ?
-            """, (subj
+            """, (subj 
