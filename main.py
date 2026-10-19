@@ -23,8 +23,10 @@ ADMIN_ID = os.environ.get('ADMIN_ID')
 
 bot = telebot.TeleBot(TOKEN)
 user_states = {}
+admin_upload_cache = {}
+DYNAMIC_CONTENT = {}
 
-# --- الكيبورد السفلي الثابت (مع عكس الأماكن) ---
+# --- الكيبورد السفلي الثابت ---
 def main_reply_keyboard():
     markup = telebot.types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(
@@ -78,7 +80,22 @@ def send_welcome(message):
     )
     bot.reply_to(message, welcome_text, reply_markup=main_reply_keyboard())
 
-# 4. معالجة الرسائل والمدخلات
+# 4. معالج أمر /admin الخاص بك
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    user_id = message.from_user.id
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        admin_text = (
+            "🛠️ **لوحة تحكم الأدمن (المهندس محمد):**\n\n"
+            "لإدراج محاضرة أو ملف جديد:\n"
+            "1. قم بإرسال الملف أو الفيديو أو النص مباشرة هنا في البوت.\n"
+            "2. سيطلب منك البوت اختيار المادة والقسم لنشره فوراً للطلاب."
+        )
+        bot.reply_to(message, admin_text, parse_mode="Markdown")
+    else:
+        bot.reply_to(message, "⚠️ عذراً، هذا الأمر مخصص لمطور البوت فقط.")
+
+# 5. معالجة الرسائل والمدخلات
 @bot.message_handler(content_types=['text', 'document', 'video', 'audio', 'photo'])
 def handle_all_messages(message):
     user_id = message.from_user.id
@@ -86,8 +103,16 @@ def handle_all_messages(message):
 
     if text == "/cancel":
         user_states[user_id] = None
+        admin_upload_cache.pop(user_id, None)
         bot.reply_to(message, "❌ تم إلغاء العملية.", reply_markup=main_reply_keyboard())
         return
+
+    # استقبال الملفات من الأدمن لرفعها
+    if ADMIN_ID and str(user_id) == str(ADMIN_ID):
+        if message.content_type != 'text' or (text and not text.startswith('/') and user_states.get(user_id) != "waiting_for_question"):
+            admin_upload_cache[user_id] = message
+            bot.reply_to(message, "📥 **تم استقبال الملف بنجاح!**\nالآن اختر المادة التي تريد إدراج هذا المحتوى لها:", reply_markup=inline_materials_menu(prefix="upmat"))
+            return
 
     if user_states.get(user_id) == "waiting_for_question":
         user_states[user_id] = None
@@ -103,12 +128,17 @@ def handle_all_messages(message):
         bot.send_message(message.chat.id, "📚 **اختر المادة التعليمية:**", parse_mode="Markdown", reply_markup=inline_materials_menu(prefix="mat"))
 
     elif text == "📅 جدول المحاضرات":
-        schedule_text = (
-            "📅 **جدول المحاضرات الدراسية**\n"
-            "قسم تقنية المعلومات (IT - موازي)\n\n"
-            "📎 [اضغط هنا لتحميل ملف جدول المحاضرات PDF]"
-        )
-        bot.reply_to(message, schedule_text, parse_mode="Markdown", reply_markup=main_reply_keyboard())
+        db_key = "schedule_pdf"
+        if db_key in DYNAMIC_CONTENT:
+            saved_msg = DYNAMIC_CONTENT[db_key]
+            bot.copy_message(chat_id=message.chat.id, from_chat_id=saved_msg.chat.id, message_id=saved_msg.message_id)
+        else:
+            schedule_text = (
+                "📅 **جدول المحاضرات الدراسية**\n"
+                "قسم تقنية المعلومات (IT - موازي)\n\n"
+                "⏳ **سيتم إدراج جدول المحاضرات PDF قريباً.**"
+            )
+            bot.reply_to(message, schedule_text, parse_mode="Markdown", reply_markup=main_reply_keyboard())
 
     elif text == "❓ طرح سؤال":
         user_states[user_id] = "waiting_for_question"
@@ -139,14 +169,14 @@ def handle_all_messages(message):
         if text and not text.startswith('/'):
             pass
 
-# 5. معالجة الضغط على الأزرار الشفافة فوراً وبدون أي تأخير (0 ثانية)
+# 6. معالجة الأزرار الشفافة وفورية الاستجابة (0 ثانية)
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    # إخبار تليجرام فوراً بالاستلام لإنهاء التحميل والانتظار ⚡
     bot.answer_callback_query(call.id)
     
     data = call.data
     chat_id = call.message.chat.id
+    user_id = call.from_user.id
 
     mat_names = {
         "arabic": "مهارة اللغة العربية",
@@ -163,6 +193,27 @@ def callback_handler(call):
     elif data == "back_to_materials":
         bot.send_message(chat_id, "📚 **اختر المادة التعليمية:**", parse_mode="Markdown", reply_markup=inline_materials_menu(prefix="mat"))
 
+    # خطوات رفع الآدمن للمادة
+    elif data.startswith("upmat_"):
+        mat_code = data.split("_")[1]
+        admin_upload_cache[f"{user_id}_mat"] = mat_code
+        bot.send_message(chat_id, f"تم اختيار المادة: **{mat_names.get(mat_code)}**\nاختر القسم المراد الإدراج له:", parse_mode="Markdown", reply_markup=inline_sections_menu(mat_code, prefix="upsec"))
+
+    # حفظ المحتوى للقسم المحدد
+    elif data.startswith("upsec_"):
+        parts = data.split("_")
+        sec_type = parts[1]
+        mat_code = parts[2]
+        
+        cached_msg = admin_upload_cache.get(user_id)
+        if cached_msg:
+            db_key = f"{mat_code}_{sec_type}"
+            DYNAMIC_CONTENT[db_key] = cached_msg
+            bot.send_message(chat_id, f"✅ **تم إدراج المحتوى بنجاح في ({mat_names.get(mat_code)} ⟵ {sec_type})!**", parse_mode="Markdown")
+        else:
+            bot.send_message(chat_id, "⚠️ انتهت المهلة، أرسل الملف مرة أخرى.")
+        return
+
     elif data.startswith("mat_"):
         mat_code = data.split("_")[1]
         subject_name = mat_names.get(mat_code, "المادة")
@@ -171,6 +222,7 @@ def callback_handler(call):
     elif data.startswith("sec_"):
         parts = data.split("_")
         sec_type = parts[1]
+        mat_code = parts[2]
 
         sec_titles = {
             "lectures": "📖 المحاضرات",
@@ -180,9 +232,15 @@ def callback_handler(call):
             "attachments": "📎 الملحقات"
         }
         title = sec_titles.get(sec_type, "القسم")
-        bot.send_message(chat_id, f"📁 **{title}**\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**", parse_mode="Markdown")
+        db_key = f"{mat_code}_{sec_type}"
+
+        if db_key in DYNAMIC_CONTENT:
+            saved_msg = DYNAMIC_CONTENT[db_key]
+            bot.copy_message(chat_id=chat_id, from_chat_id=saved_msg.chat.id, message_id=saved_msg.message_id)
+        else:
+            bot.send_message(chat_id, f"📁 **{title}**\n\n⏳ **سوف يتم إدراج المحاضرات والمحتويات قريباً.**", parse_mode="Markdown")
 
 if __name__ == "__main__":
     keep_alive()
-    print("Bot is starting...")
+    print("Bot is working...")
     bot.polling(none_stop=True)
