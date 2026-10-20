@@ -3,6 +3,7 @@ import sqlite3
 import threading
 import logging
 import time
+from datetime import datetime
 import telebot
 from flask import Flask
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -56,7 +57,8 @@ with db() as conn:
     conn.execute("CREATE TABLE IF NOT EXISTS content (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, subject TEXT, category TEXT, doctor TEXT, title TEXT, notes TEXT, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, question TEXT, answer TEXT, status TEXT DEFAULT 'قيد المراجعة')")
-    conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, reminder TEXT)")
+    # تم إضافة حقل التاريخ والوقت لتخزين وقت إرسال التذكير
+    conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, reminder TEXT, date_str TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS custom_subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, name TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id INTEGER PRIMARY KEY, semester TEXT)")
 
@@ -399,17 +401,29 @@ if bot:
             return
 
         if st == "admin_send_reminder" and cid == ADMIN_ID:
+            # إنشاء صيغة التاريخ واليوم بالعربي
+            days_map = {
+                "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين",
+                "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"
+            }
+            now = datetime.now()
+            day_name = days_map.get(now.strftime("%A"), "")
+            date_str = f"{day_name}، {now.strftime('%Y-%m-%d %I:%M %p')}"
+
             with db() as conn:
-                # حفظ التذكير في قاعدة البيانات لكي يظهر للطلاب لاحقاً
-                conn.execute("INSERT INTO reminders (reminder) VALUES (?)", (txt,))
+                # 1. حفظ التذكير مع التاريخ والوقت في قاعدة البيانات
+                conn.execute("INSERT INTO reminders (reminder, date_str) VALUES (?, ?)", (txt, date_str))
+                # 2. جلب جميع الطلاب المسجلين
                 users = conn.execute("SELECT DISTINCT user_id FROM user_preferences").fetchall()
             
+            # 3. إرسال التذكير فوراً وتلقائياً لجميع الطلاب مع التاريخ واليوم
             for u in users:
                 try:
-                    bot.send_message(u["user_id"], f"🔔 **تذكير هام من الإدارة:**\n\n{txt}", parse_mode="Markdown")
+                    bot.send_message(u["user_id"], f"🔔 **تذكير هام من الإدارة:**\n📅 {date_str}\n\n{txt}", parse_mode="Markdown")
                 except Exception:
                     pass
-            bot.send_message(cid, "✅ تم حفظ وإرسال التذكير لجميع الطلاب بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+            
+            bot.send_message(cid, "✅ تم إرسال وحفظ التذكير لجميع الطلاب بنجاح مع التاريخ واليوم!", reply_markup=kb(ADMIN_ITEMS))
             user_states.pop(cid, None)
             return
 
@@ -500,12 +514,12 @@ if bot:
                 bot.send_message(cid, f"❓ سؤال #{r['id']}: {r['question']}\n📌 الحالة: {r['status']}\n💬 الإجابة: {r['answer'] or 'قيد المراجعة'}")
         elif txt == "🔔 التذكيرات":
             with db() as conn:
-                rows = conn.execute("SELECT reminder FROM reminders ORDER BY id DESC LIMIT 5").fetchall()
+                rows = conn.execute("SELECT reminder, date_str FROM reminders ORDER BY id DESC LIMIT 5").fetchall()
             if not rows:
-                bot.send_message(cid, "🔔 لا توجد تذكيرات جديدة حالياً.")
+                bot.send_message(cid, "🔔 لا توجد تذكيرات مسجلة حالياً.")
             else:
                 for r in rows:
-                    bot.send_message(cid, f"🔔 **تذكير إداري:**\n\n{r['reminder']}", parse_mode="Markdown")
+                    bot.send_message(cid, f"🔔 **تذكير إداري سابق:**\n📅 {r['date_str']}\n\n{r['reminder']}", parse_mode="Markdown")
         elif txt == "👨‍💻 مطور البوت":
             bot.send_message(cid, "👨‍💻 مطور البوت:\nالمهندس / محمد الظاهر\n📞 718117501")
         elif txt == "➕ إضافة محتوى" and m.from_user.id == ADMIN_ID:
