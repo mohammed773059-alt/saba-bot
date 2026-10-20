@@ -31,10 +31,12 @@ SEMESTERS = [
 
 CATEGORIES = ["المحاضرات", "شروحات فيديو", "التكاليف", "ملفات PDF", "الملحقات"]
 
+# تم حذف زر "تغيير الفصل الدراسي" بناءً على طلبك
 HOME_ITEMS = [
-    "📚 المواد التعليمية", "📎 الملحقات", "📅 الجدول الدراسي",
-    "❓ طرح السؤال", "💬 متابعة السؤال", "🔔 التذكيرات",
-    "🔄 تغيير الفصل الدراسي", "👨‍💻 مطور البوت"
+    "📚 المواد التعليمية", "📎 الملحقات", 
+    "📅 الجدول الدراسي", "❓ طرح السؤال", 
+    "💬 متابعة السؤال", "🔔 التذكيرات", 
+    "👨‍💻 مطور البوت"
 ]
 
 ADMIN_ITEMS = ["➕ إضافة محتوى", "🗑️ حذف محتوى", "📚 إضافة مادة جديدة", "💬 أسئلة الطلاب", "🏠 القائمة الرئيسية"]
@@ -372,19 +374,4 @@ if bot:
                 m_reply = InlineKeyboardMarkup()
                 m_reply.add(InlineKeyboardButton("💬 رد على هذا السؤال", callback_data=f"replyq_{qid}"))
                 bot.send_message(ADMIN_ID, f"❓ سؤال جديد رقم #{qid}\n👤 من الطالب: {m.from_user.first_name}\n\n📝 السؤال:\n{txt}", reply_markup=m_reply)
-            user_states.pop(cid)
-def run_bot():
-    if bot:
-        while True:
-            try:
-                bot.infinity_polling(timeout=10, long_polling_timeout=5)
-            except Exception as e:
-                logger.error(f"Polling error: {e}")
-                time.sleep(5)
-
-if bot:
-    threading.Thread(target=run_bot, daemon=True).start()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+ 
