@@ -81,6 +81,10 @@ if bot:
         try:
             if data == "go_home":
                 send_home(cid)
+            elif data.startswith("replyq_") and cid == ADMIN_ID:
+                qid = int(data.split("_")[1])
+                user_states[cid] = f"replying_q_{qid}"
+                bot.send_message(cid, f"💬 اكتب إجابتك للسؤال رقم ({qid}) الآن مباشرة في رسالة:")
             elif data.startswith("sub_") or data.startswith("submat_"):
                 is_att = data.startswith("submat_")
                 idx = int(data.split("_")[1])
@@ -151,13 +155,29 @@ if bot:
         txt = m.text.strip() if m.text else ""
         st = user_states.get(cid)
 
+        if st and st.startswith("replying_q_") and cid == ADMIN_ID:
+            qid = int(st.replace("replying_q_", ""))
+            with db() as conn:
+                row = conn.execute("SELECT user_id, question FROM questions WHERE id = ?", (qid,)).fetchone()
+                if row:
+                    conn.execute("UPDATE questions SET answer = ?, status = 'تمت الإجابة' WHERE id = ?", (txt, qid))
+                    try:
+                        bot.send_message(row["user_id"], f"🔔 تمت الإجابة على سؤالك رقم ({qid}):\n\n❓ السؤال: {row['question']}\n\n💬 الإجابة:\n{txt}")
+                    except Exception:
+                        pass
+                    bot.send_message(cid, f"✅ تم إرسال الإجابة بنجاح للطالب على السؤال رقم ({qid}).", reply_markup=kb(ADMIN_ITEMS))
+            user_states.pop(cid, None)
+            return
+
         if st == "ask_q":
             with db() as conn:
                 cur = conn.execute("INSERT INTO questions (user_id, username, question) VALUES (?, ?, ?)", (m.from_user.id, m.from_user.username or "", txt))
                 qid = cur.lastrowid
             bot.send_message(cid, f"✅ تم إرسال سؤالك برقم: {qid}", reply_markup=kb(HOME_ITEMS))
             if ADMIN_ID != 0:
-                bot.send_message(ADMIN_ID, f"❓ سؤال جديد #{qid}\nمن: {m.from_user.first_name}\n\n{txt}\n\nللرد:\nرد {qid} الإجابة")
+                m_reply = InlineKeyboardMarkup()
+                m_reply.add(InlineKeyboardButton("💬 رد على هذا السؤال", callback_data=f"replyq_{qid}"))
+                bot.send_message(ADMIN_ID, f"❓ سؤال جديد رقم #{qid}\n👤 من الطالب: {m.from_user.first_name}\n\n📝 السؤال:\n{txt}", reply_markup=m_reply)
             user_states.pop(cid, None)
             return
 
@@ -167,18 +187,6 @@ if bot:
                              (m.content_type, m.photo[-1].file_id if m.content_type == "photo" else (m.document.file_id if m.content_type == "document" else ""), txt))
             bot.send_message(cid, "✅ تم رفع الجدول.", reply_markup=kb(ADMIN_ITEMS))
             user_states.pop(cid, None)
-            return
-
-        if txt.startswith("رد ") and m.from_user.id == ADMIN_ID:
-            parts = txt.split(maxsplit=2)
-            if len(parts) >= 3 and parts[1].isdigit():
-                qid, ans = int(parts[1]), parts[2]
-                with db() as conn:
-                    row = conn.execute("SELECT user_id, question FROM questions WHERE id = ?", (qid,)).fetchone()
-                    if row:
-                        conn.execute("UPDATE questions SET answer = ?, status = 'تمت الإجابة' WHERE id = ?", (ans, qid))
-                        bot.send_message(row["user_id"], f"🔔 تمت الإجابة على سؤالك:\n\n{ans}")
-                        bot.reply_to(m, "✅ تم الإرسال.")
             return
 
         if txt == "📚 المواد التعليمية":
@@ -233,7 +241,9 @@ if bot:
             if not rows:
                 bot.send_message(cid, "لا توجد أسئلة.")
             for r in rows:
-                bot.send_message(cid, f"❓ سؤال #{r['id']} من ({r['user_id']}):\n{r['question']}\n\nللرد:\nرد {r['id']} الإجابة")
+                m_reply = InlineKeyboardMarkup()
+                m_reply.add(InlineKeyboardButton("💬 رد على هذا السؤال", callback_data=f"replyq_{r['id']}"))
+                bot.send_message(cid, f"❓ سؤال #{r['id']} من الطالب ({r['user_id']}):\n\n📝 السؤال:\n{r['question']}\n📌 الحالة: {r['status']}", reply_markup=m_reply)
         elif txt == "🏠 القائمة الرئيسية":
             send_home(cid)
 
