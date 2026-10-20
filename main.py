@@ -35,7 +35,6 @@ HOME_ITEMS = [
 ]
 
 ADMIN_ITEMS = ["➕ إضافة محتوى", "📅 رفع الجدول الدراسي", "💬 أسئلة الطلاب", "🏠 القائمة الرئيسية"]
-ADMIN_AFTER = ["➕ إضافة محتوى آخر", "⚙️ لوحة الإدارة", "🏠 القائمة الرئيسية"]
 
 user_states = {}
 user_data = {}
@@ -81,6 +80,20 @@ if bot:
         try:
             if data == "go_home":
                 send_home(cid)
+            elif data.startswith("admin_sub_"):
+                idx = int(data.split("_")[2])
+                sub = SUBJECTS[idx]
+                user_data.setdefault(cid, {})["subject"] = sub
+                m = InlineKeyboardMarkup()
+                for cat in CATEGORIES:
+                    m.add(InlineKeyboardButton(cat, callback_data=f"admin_cat_{cat}"))
+                m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                bot.edit_message_text(f"➕ المادة: {sub}\nاختر القسم:", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("admin_cat_"):
+                cat = data.replace("admin_cat_", "", 1)
+                user_data.setdefault(cid, {})["category"] = cat
+                user_states[cid] = "admin_add_doc"
+                bot.send_message(cid, f"📚 المادة: {user_data[cid]['subject']}\n📂 القسم: {cat}\n\n👨‍🏫 اكتب اسم الدكتور (أو أرسل: لا يوجد):")
             elif data.startswith("replyq_") and cid == ADMIN_ID:
                 qid = int(data.split("_")[1])
                 user_states[cid] = f"replying_q_{qid}"
@@ -107,12 +120,6 @@ if bot:
                         m.add(InlineKeyboardButton(cat, callback_data=f"cat_{cat}"))
                     m.add(InlineKeyboardButton("🔄 رجوع", callback_data="back_sub"), InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
                     bot.edit_message_text(f"📚 {sub}\nاختر القسم:", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
-            elif data == "back_sub" or data == "back_submat":
-                m = InlineKeyboardMarkup()
-                for i, s in enumerate(SUBJECTS):
-                    m.add(InlineKeyboardButton(s, callback_data=f"sub_{i}" if data == "back_sub" else f"submat_{i}"))
-                m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
-                bot.edit_message_text("📚 اختر المادة:", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
             elif data.startswith("cat_"):
                 cat = data.replace("cat_", "", 1)
                 sub = user_data.get(cid, {}).get("subject", "")
@@ -167,6 +174,43 @@ if bot:
                         pass
                     bot.send_message(cid, f"✅ تم إرسال الإجابة بنجاح للطالب على السؤال رقم ({qid}).", reply_markup=kb(ADMIN_ITEMS))
             user_states.pop(cid, None)
+            return
+
+        if st == "admin_add_doc" and cid == ADMIN_ID:
+            user_data.setdefault(cid, {})["doctor"] = "" if txt == "لا يوجد" else txt
+            user_states[cid] = "admin_add_title"
+            bot.send_message(cid, "📝 اكتب عنوان المحاضرة أو الملف (مثال: المحاضرة الأولى):")
+            return
+
+        if st == "admin_add_title" and cid == ADMIN_ID:
+            user_data.setdefault(cid, {})["title"] = txt
+            user_states[cid] = "admin_add_notes"
+            bot.send_message(cid, "📌 اكتب ملاحظات (أو أرسل: لا يوجد):")
+            return
+
+        if st == "admin_add_notes" and cid == ADMIN_ID:
+            user_data.setdefault(cid, {})["notes"] = "" if txt == "لا يوجد" else txt
+            user_states[cid] = "admin_add_file"
+            bot.send_message(cid, "📎 أرسل الملف الآن (PDF، صورة، فيديو، أو نص):")
+            return
+
+        if st == "admin_add_file" and cid == ADMIN_ID:
+            d = user_data.get(cid, {})
+            ctype = m.content_type
+            fid = ""
+            if ctype == "photo":
+                fid = m.photo[-1].file_id
+            elif ctype in ["document", "video", "audio", "voice"]:
+                fid = getattr(m, ctype).file_id
+
+            with db() as conn:
+                conn.execute(
+                    "INSERT INTO content (subject, category, doctor, title, notes, content_type, file_id, text_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (d.get("subject"), d.get("category"), d.get("doctor"), d.get("title"), d.get("notes"), ctype, fid, txt if ctype == "text" else "")
+                )
+            bot.send_message(cid, "✅ تمت إضافة المحتوى بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+            user_states.pop(cid, None)
+            user_data.pop(cid, None)
             return
 
         if st == "ask_q":
@@ -231,6 +275,7 @@ if bot:
             m_markup = InlineKeyboardMarkup()
             for i, s in enumerate(SUBJECTS):
                 m_markup.add(InlineKeyboardButton(s, callback_data=f"admin_sub_{i}"))
+            m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
             bot.send_message(cid, "📚 اختر المادة لإضافة المحتوى:", reply_markup=m_markup)
         elif txt == "📅 رفع الجدول الدراسي" and m.from_user.id == ADMIN_ID:
             user_states[cid] = "up_sched"
