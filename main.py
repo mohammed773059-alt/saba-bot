@@ -127,7 +127,6 @@ if bot:
     def start(m):
         send_home(m.chat.id)
 
-    # التحقق من خيار الإدارة وإرسال تحذير للطلاب
     @bot.message_handler(commands=["admin"])
     @bot.message_handler(func=lambda m: m.text and m.text.lower() in ["admin", "ادمن", "⚙️ لوحة الإدارة"])
     def handle_admin_access(m):
@@ -135,7 +134,6 @@ if bot:
             user_states[m.chat.id] = "admin_menu"
             bot.send_message(m.chat.id, "🔐 لوحة الإدارة:", reply_markup=kb(ADMIN_ITEMS))
         else:
-            # رسالة تحذيرية محددة وبسيطة للطالب
             bot.send_message(m.chat.id, "⚠️ **تنبيه:** هذه القائمة خاصة بإدارة البوت فقط، ولا يمكنك الوصول إليها.", parse_mode="Markdown")
 
     @bot.callback_query_handler(func=lambda c: True)
@@ -193,6 +191,38 @@ if bot:
                 user_data.setdefault(cid, {})["new_sub_sem"] = sem
                 user_states[cid] = "admin_save_new_subject"
                 bot.send_message(cid, f"📚 أرسل اسم المادة الجديدة التي تريد إضافتها إلى ({sem}):")
+            elif data.startswith("delsub_"):
+                idx = int(data.split("_")[1])
+                sem = get_user_semester(uid) or SEMESTERS[0]
+                subs = get_subjects_by_sem(sem)
+                if idx < len(subs):
+                    sub = subs[idx]
+                    user_data.setdefault(cid, {})["del_subject"] = sub
+                    m = InlineKeyboardMarkup()
+                    for cat in CATEGORIES:
+                        m.add(InlineKeyboardButton(cat, callback_data=f"delcat_{cat}"))
+                    m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                    bot.edit_message_text(f"🗑️ حذف محتوى من مادة: {sub}\nاختر القسم:", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("delcat_"):
+                cat = data.replace("delcat_", "", 1)
+                sub = user_data.get(cid, {}).get("del_subject", "")
+                with db() as conn:
+                    rows = conn.execute("SELECT id, title FROM content WHERE subject = ? AND category = ?", (sub, cat)).fetchall()
+                m = InlineKeyboardMarkup()
+                if not rows:
+                    m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                    bot.edit_message_text(f"⏳ لا توجد محتويات في ({sub} ➔ {cat}) للحذف.", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+                else:
+                    for r in rows:
+                        m.add(InlineKeyboardButton(f"❌ حذف: {r['title']}", callback_data=f"delfinal_{r['id']}"))
+                    m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                    bot.edit_message_text(f"🗑️ اختر المحتوى المراد حذفه من ({sub} - {cat}):", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("delfinal_"):
+                item_id = int(data.split("_")[1])
+                with db() as conn:
+                    conn.execute("DELETE FROM content WHERE id = ?", (item_id,))
+                bot.answer_callback_query(c.id, "✅ تم الحذف بنجاح!", show_alert=True)
+                bot.edit_message_text("✅ تم حذف المحتوى المحدد بنجاح.", chat_id=cid, message_id=c.message.message_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home")))
             elif data.startswith("sub_") or data.startswith("submat_"):
                 parts = data.split("_")
                 is_att = data.startswith("submat_")
@@ -342,44 +372,4 @@ if bot:
                 m_reply.add(InlineKeyboardButton("💬 رد على هذا السؤال", callback_data=f"replyq_{qid}"))
                 bot.send_message(ADMIN_ID, f"❓ سؤال جديد رقم #{qid}\n👤 من الطالب: {m.from_user.first_name}\n\n📝 السؤال:\n{txt}", reply_markup=m_reply)
             user_states.pop(cid, None)
-            return
-
-        if txt == "📚 المواد التعليمية":
-            show_subjects_for_user(cid, uid)
-        elif txt == "🔄 تغيير الفصل الدراسي":
-            m_markup = InlineKeyboardMarkup()
-            for i, s in enumerate(SEMESTERS):
-                m_markup.add(InlineKeyboardButton(f"🎓 {s}", callback_data=f"setsem_{i}"))
-            m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
-            bot.send_message(cid, "🔄 اختر الفصل الدراسي الجديد:", reply_markup=m_markup)
-        elif txt == "📎 الملحقات":
-            sem = get_user_semester(uid)
-            if not sem:
-                show_subjects_for_user(cid, uid)
-            else:
-                subs = get_subjects_by_sem(sem)
-                m_markup = InlineKeyboardMarkup()
-                sem_idx = SEMESTERS.index(sem) if sem in SEMESTERS else 0
-                for i, s in enumerate(subs):
-                    m_markup.add(InlineKeyboardButton(f"📖 {s}", callback_data=f"submat_{sem_idx}_{i}"))
-                m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
-                bot.send_message(cid, f"📎 اختر المادة لعرض ملحقاتها ({sem}):", reply_markup=m_markup)
-        elif txt == "📅 الجدول الدراسي":
-            with db() as conn:
-                s = conn.execute("SELECT * FROM settings WHERE key = 'schedule'").fetchone()
-            if not s:
-                bot.send_message(cid, "📅 الجدول الدراسي غير متوفر حالياً.\n⏳ سوف يتم إدراجه قريباً من قبل إدارة البوت.")
-            else:
-                if s["content_type"] == "text":
-                    bot.send_message(cid, s["text_content"])
-                elif s["content_type"] == "photo":
-                    bot.send_photo(cid, s["file_id"])
-                elif s["content_type"] == "document":
-                    bot.send_document(cid, s["file_id"])
-        elif txt == "❓ طرح السؤال":
-            user_states[cid] = "ask_q"
-            bot.send_message(cid, "❓ اكتب سؤالك في رسالة واحدة:", reply_markup=kb(["🏠 القائمة الرئيسية"]))
-        elif txt == "💬 متابعة السؤال":
-            with db() as conn:
-                rows = conn.execute("SELECT * FROM questions WHERE user_id = ? ORDER BY id DESC LIMIT 5", (m.from_user.id,)).fetchall()
-        
+    
