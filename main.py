@@ -56,7 +56,7 @@ with db() as conn:
     conn.execute("CREATE TABLE IF NOT EXISTS content (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, subject TEXT, category TEXT, doctor TEXT, title TEXT, notes TEXT, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, question TEXT, answer TEXT, status TEXT DEFAULT 'قيد المراجعة')")
-    conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, reminder TEXT)")
+    conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, reminder TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS custom_subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, name TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id INTEGER PRIMARY KEY, semester TEXT)")
 
@@ -400,13 +400,16 @@ if bot:
 
         if st == "admin_send_reminder" and cid == ADMIN_ID:
             with db() as conn:
+                # حفظ التذكير في قاعدة البيانات لكي يظهر للطلاب لاحقاً
+                conn.execute("INSERT INTO reminders (reminder) VALUES (?)", (txt,))
                 users = conn.execute("SELECT DISTINCT user_id FROM user_preferences").fetchall()
+            
             for u in users:
                 try:
                     bot.send_message(u["user_id"], f"🔔 **تذكير هام من الإدارة:**\n\n{txt}", parse_mode="Markdown")
                 except Exception:
                     pass
-            bot.send_message(cid, "✅ تم إرسال التذكير لجميع الطلاب بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+            bot.send_message(cid, "✅ تم حفظ وإرسال التذكير لجميع الطلاب بنجاح!", reply_markup=kb(ADMIN_ITEMS))
             user_states.pop(cid, None)
             return
 
@@ -496,7 +499,13 @@ if bot:
             for r in rows:
                 bot.send_message(cid, f"❓ سؤال #{r['id']}: {r['question']}\n📌 الحالة: {r['status']}\n💬 الإجابة: {r['answer'] or 'قيد المراجعة'}")
         elif txt == "🔔 التذكيرات":
-            bot.send_message(cid, "🔔 لا توجد تذكيرات جديدة حالياً.")
+            with db() as conn:
+                rows = conn.execute("SELECT reminder FROM reminders ORDER BY id DESC LIMIT 5").fetchall()
+            if not rows:
+                bot.send_message(cid, "🔔 لا توجد تذكيرات جديدة حالياً.")
+            else:
+                for r in rows:
+                    bot.send_message(cid, f"🔔 **تذكير إداري:**\n\n{r['reminder']}", parse_mode="Markdown")
         elif txt == "👨‍💻 مطور البوت":
             bot.send_message(cid, "👨‍💻 مطور البوت:\nالمهندس / محمد الظاهر\n📞 718117501")
         elif txt == "➕ إضافة محتوى" and m.from_user.id == ADMIN_ID:
