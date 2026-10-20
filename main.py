@@ -22,7 +22,6 @@ ADMIN_ID = int(os.getenv("ADMIN_USER_ID", "0").strip() or "0")
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
 DB_FILE = "library.db"
 
-# تم التعديل إلى فصلين دراسيين فقط
 SEMESTERS = [
     "الفصل الدراسي الأول",
     "الفصل الدراسي الثاني"
@@ -37,7 +36,12 @@ HOME_ITEMS = [
     "👨‍💻 مطور البوت"
 ]
 
-ADMIN_ITEMS = ["➕ إضافة محتوى", "🗑️ حذف محتوى", "📚 إضافة مادة جديدة", "💬 أسئلة الطلاب", "🏠 القائمة الرئيسية"]
+ADMIN_ITEMS = [
+    "➕ إضافة محتوى", "🗑️ حذف محتوى", 
+    "📚 إضافة مادة جديدة", "✏️ تعديل مادة", 
+    "❌ حذف مادة", "💬 أسئلة الطلاب", 
+    "🏠 القائمة الرئيسية"
+]
 
 user_states = {}
 user_data = {}
@@ -191,6 +195,47 @@ if bot:
                 user_data.setdefault(cid, {})["new_sub_sem"] = sem
                 user_states[cid] = "admin_save_new_subject"
                 bot.send_message(cid, f"📚 أرسل اسم المادة الجديدة التي تريد إضافتها إلى ({sem}):")
+            elif data.startswith("editsub_sem_"):
+                sem_idx = int(data.split("_")[2])
+                sem = SEMESTERS[sem_idx]
+                subs = get_subjects_by_sem(sem)
+                m = InlineKeyboardMarkup()
+                for i, s in enumerate(subs):
+                    m.add(InlineKeyboardButton(f"✏️ {s}", callback_data=f"doeditsub_{sem_idx}_{i}"))
+                m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                bot.edit_message_text(f"✏️ اختر المادة المراد تعديل اسمها في ({sem}):", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("doeditsub_"):
+                parts = data.split("_")
+                sem_idx = int(parts[1])
+                sub_idx = int(parts[2])
+                sem = SEMESTERS[sem_idx]
+                subs = get_subjects_by_sem(sem)
+                old_sub = subs[sub_idx]
+                user_data.setdefault(cid, {})["edit_old_name"] = old_sub
+                user_data.setdefault(cid, {})["edit_sem"] = sem
+                user_states[cid] = "admin_save_edit_subject"
+                bot.send_message(cid, f"✏️ المادة الحالية: **{old_sub}**\n\nأرسل الاسم الجديد للمادة الآن:")
+            elif data.startswith("delsub_sem_"):
+                sem_idx = int(data.split("_")[2])
+                sem = SEMESTERS[sem_idx]
+                subs = get_subjects_by_sem(sem)
+                m = InlineKeyboardMarkup()
+                for i, s in enumerate(subs):
+                    m.add(InlineKeyboardButton(f"❌ {s}", callback_data=f"dodelsub_{sem_idx}_{i}"))
+                m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                bot.edit_message_text(f"❌ اختر المادة المراد حذفها نهائياً من ({sem}):", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("dodelsub_"):
+                parts = data.split("_")
+                sem_idx = int(parts[1])
+                sub_idx = int(parts[2])
+                sem = SEMESTERS[sem_idx]
+                subs = get_subjects_by_sem(sem)
+                target_sub = subs[sub_idx]
+                with db() as conn:
+                    conn.execute("DELETE FROM custom_subjects WHERE semester = ? AND name = ?", (sem, target_sub))
+                    conn.execute("DELETE FROM content WHERE semester = ? AND subject = ?", (sem, target_sub))
+                bot.answer_callback_query(c.id, f"✅ تم حذف مادة {target_sub} بنجاح!", show_alert=True)
+                bot.edit_message_text(f"✅ تم حذف المادة ({target_sub}) وكل محتوياتها بنجاح.", chat_id=cid, message_id=c.message.message_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home")))
             elif data.startswith("delsub_"):
                 idx = int(data.split("_")[1])
                 sem = get_user_semester(uid) or SEMESTERS[0]
@@ -291,7 +336,6 @@ if bot:
             bot.answer_callback_query(c.id)
         except Exception as e:
             logger.error(e)
-
     @bot.message_handler(func=lambda m: True, content_types=["text", "document", "video", "photo", "audio", "voice"])
     def all_msgs(m):
         cid = m.chat.id
@@ -323,6 +367,21 @@ if bot:
                 except Exception:
                     bot.send_message(cid, "⚠️ حدث خطأ أو أن المادة موجودة مسبقاً.", reply_markup=kb(ADMIN_ITEMS))
             user_states.pop(cid, None)
+            return
+
+        if st == "admin_save_edit_subject" and cid == ADMIN_ID:
+            old_sub = user_data.get(cid, {}).get("edit_old_name", "")
+            sem = user_data.get(cid, {}).get("edit_sem", "")
+            if txt and old_sub and sem:
+                try:
+                    with db() as conn:
+                        conn.execute("UPDATE custom_subjects SET name = ? WHERE semester = ? AND name = ?", (txt, sem, old_sub))
+                        conn.execute("UPDATE content SET subject = ? WHERE semester = ? AND subject = ?", (txt, sem, old_sub))
+                    bot.send_message(cid, f"✅ تم تعديل اسم المادة من ({old_sub}) إلى ({txt}) بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+                except Exception:
+                    bot.send_message(cid, "⚠️ حدث خطأ أثناء تعديل اسم المادة.", reply_markup=kb(ADMIN_ITEMS))
+            user_states.pop(cid, None)
+            user_data.pop(cid, None)
             return
 
         if st == "admin_add_doc" and cid == ADMIN_ID:
@@ -434,6 +493,18 @@ if bot:
                 m_markup.add(InlineKeyboardButton(f"🎓 {sem}", callback_data=f"addsub_sem_{i}"))
             m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
             bot.send_message(cid, "📚 اختر الفصل الدراسي الذي تريد إضافة مادة جديدة إليه:", reply_markup=m_markup)
+        elif txt == "✏️ تعديل مادة" and m.from_user.id == ADMIN_ID:
+            m_markup = InlineKeyboardMarkup()
+            for i, sem in enumerate(SEMESTERS):
+                m_markup.add(InlineKeyboardButton(f"🎓 {sem}", callback_data=f"editsub_sem_{i}"))
+            m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+            bot.send_message(cid, "✏️ اختر الفصل الدراسي لتعديل مادة منه:", reply_markup=m_markup)
+        elif txt == "❌ حذف مادة" and m.from_user.id == ADMIN_ID:
+            m_markup = InlineKeyboardMarkup()
+            for i, sem in enumerate(SEMESTERS):
+                m_markup.add(InlineKeyboardButton(f"🎓 {sem}", callback_data=f"delsub_sem_{i}"))
+            m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+            bot.send_message(cid, "❌ اختر الفصل الدراسي لحذف مادة منه بالكامل:", reply_markup=m_markup)
         elif txt == "💬 أسئلة الطلاب" and m.from_user.id == ADMIN_ID:
             with db() as conn:
                 rows = conn.execute("SELECT * FROM questions ORDER BY id DESC LIMIT 5").fetchall()
