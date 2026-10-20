@@ -57,10 +57,26 @@ with db() as conn:
     conn.execute("CREATE TABLE IF NOT EXISTS content (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, subject TEXT, category TEXT, doctor TEXT, title TEXT, notes TEXT, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, content_type TEXT, file_id TEXT, text_content TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, username TEXT, question TEXT, answer TEXT, status TEXT DEFAULT 'قيد المراجعة')")
-    # تم إضافة حقل التاريخ والوقت لتخزين وقت إرسال التذكير
     conn.execute("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, reminder TEXT, date_str TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS custom_subjects (id INTEGER PRIMARY KEY AUTOINCREMENT, semester TEXT, name TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS user_preferences (user_id INTEGER PRIMARY KEY, semester TEXT)")
+
+def init_default_subjects():
+    default_subs = {
+        "الفصل الدراسي الأول": [
+            "مهارة اللغة العربية", "مهارة اللغة الإنجليزية",
+            "التفاضل والتكامل", "الفيزياء العامة وحوسبة",
+            "مقدمة في الحوسبة", "مهارات الحاسوب"
+        ]
+    }
+    with db() as conn:
+        for sem, subs in default_subs.items():
+            for s in subs:
+                exists = conn.execute("SELECT 1 FROM custom_subjects WHERE semester = ? AND name = ?", (sem, s)).fetchone()
+                if not exists:
+                    conn.execute("INSERT INTO custom_subjects (semester, name) VALUES (?, ?)", (sem, s))
+
+init_default_subjects()
 
 def get_user_semester(user_id):
     try:
@@ -78,12 +94,6 @@ def set_user_semester(user_id, semester):
 
 def get_subjects_by_sem(semester):
     subs = []
-    if semester == "الفصل الدراسي الأول":
-        subs = [
-            "مهارة اللغة العربية", "مهارة اللغة الإنجليزية",
-            "التفاضل والتكامل", "الفيزياء العامة وحوسبة",
-            "مقدمة في الحوسبة", "مهارات الحاسوب"
-        ]
     try:
         with db() as conn:
             rows = conn.execute("SELECT name FROM custom_subjects WHERE semester = ?", (semester,)).fetchall()
@@ -401,7 +411,6 @@ if bot:
             return
 
         if st == "admin_send_reminder" and cid == ADMIN_ID:
-            # إنشاء صيغة التاريخ واليوم بالعربي
             days_map = {
                 "Saturday": "السبت", "Sunday": "الأحد", "Monday": "الإثنين",
                 "Tuesday": "الثلاثاء", "Wednesday": "الأربعاء", "Thursday": "الخميس", "Friday": "الجمعة"
@@ -411,12 +420,9 @@ if bot:
             date_str = f"{day_name}، {now.strftime('%Y-%m-%d %I:%M %p')}"
 
             with db() as conn:
-                # 1. حفظ التذكير مع التاريخ والوقت في قاعدة البيانات
                 conn.execute("INSERT INTO reminders (reminder, date_str) VALUES (?, ?)", (txt, date_str))
-                # 2. جلب جميع الطلاب المسجلين
                 users = conn.execute("SELECT DISTINCT user_id FROM user_preferences").fetchall()
             
-            # 3. إرسال التذكير فوراً وتلقائياً لجميع الطلاب مع التاريخ واليوم
             for u in users:
                 try:
                     bot.send_message(u["user_id"], f"🔔 **تذكير هام من الإدارة:**\n📅 {date_str}\n\n{txt}", parse_mode="Markdown")
@@ -586,4 +592,4 @@ if bot:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port) 
+    app.run(host="0.0.0.0", port=port)
