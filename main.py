@@ -34,7 +34,7 @@ HOME_ITEMS = [
     "❓ طرح السؤال", "💬 متابعة السؤال", "🔔 التذكيرات", "👨‍💻 مطور البوت"
 ]
 
-ADMIN_ITEMS = ["➕ إضافة محتوى", "📅 رفع الجدول الدراسي", "💬 أسئلة الطلاب", "🏠 القائمة الرئيسية"]
+ADMIN_ITEMS = ["➕ إضافة محتوى", "🗑️ حذف محتوى", "📅 الجدول الدراسي", "💬 أسئلة الطلاب", "🏠 القائمة الرئيسية"]
 
 user_states = {}
 user_data = {}
@@ -94,6 +94,35 @@ if bot:
                 user_data.setdefault(cid, {})["category"] = cat
                 user_states[cid] = "admin_add_doc"
                 bot.send_message(cid, f"📚 المادة: {user_data[cid]['subject']}\n📂 القسم: {cat}\n\n👨‍🏫 اكتب اسم الدكتور (أو أرسل: لا يوجد):")
+            elif data.startswith("delsub_"):
+                idx = int(data.split("_")[1])
+                sub = SUBJECTS[idx]
+                user_data.setdefault(cid, {})["del_subject"] = sub
+                m = InlineKeyboardMarkup()
+                for cat in CATEGORIES:
+                    m.add(InlineKeyboardButton(cat, callback_data=f"delcat_{cat}"))
+                m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                bot.edit_message_text(f"🗑️ حذف محتوى من مادة: {sub}\nاختر القسم:", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("delcat_"):
+                cat = data.replace("delcat_", "", 1)
+                sub = user_data.get(cid, {}).get("del_subject", "")
+                with db() as conn:
+                    rows = conn.execute("SELECT id, title FROM content WHERE subject = ? AND category = ?", (sub, cat)).fetchall()
+                m = InlineKeyboardMarkup()
+                if not rows:
+                    m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                    bot.edit_message_text(f"⏳ لا توجد محتويات في ({sub} ➔ {cat}) للحذف.", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+                else:
+                    for r in rows:
+                        m.add(InlineKeyboardButton(f"❌ حذف: {r['title']}", callback_data=f"delfinal_{r['id']}"))
+                    m.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+                    bot.edit_message_text(f"🗑️ اختر المحتوى المراد حذفه من ({sub} - {cat}):", chat_id=cid, message_id=c.message.message_id, reply_markup=m)
+            elif data.startswith("delfinal_"):
+                item_id = int(data.split("_")[1])
+                with db() as conn:
+                    conn.execute("DELETE FROM content WHERE id = ?", (item_id,))
+                bot.answer_callback_query(c.id, "✅ تم الحذف بنجاح!", show_alert=True)
+                bot.edit_message_text("✅ تم حذف المحتوى المحدد بنجاح.", chat_id=cid, message_id=c.message.message_id, reply_markup=InlineKeyboardMarkup().add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home")))
             elif data.startswith("replyq_") and cid == ADMIN_ID:
                 qid = int(data.split("_")[1])
                 user_states[cid] = f"replying_q_{qid}"
@@ -271,12 +300,18 @@ if bot:
             bot.send_message(cid, "🔔 لا توجد تذكيرات جديدة حالياً.")
         elif txt == "👨‍💻 مطور البوت":
             bot.send_message(cid, "👨‍💻 مطور البوت:\nالمهندس / محمد الظاهر\n📞 718117501")
-        elif txt in ["➕ إضافة محتوى", "➕ إضافة محتوى آخر"] and m.from_user.id == ADMIN_ID:
+        elif txt == "➕ إضافة محتوى" and m.from_user.id == ADMIN_ID:
             m_markup = InlineKeyboardMarkup()
             for i, s in enumerate(SUBJECTS):
                 m_markup.add(InlineKeyboardButton(s, callback_data=f"admin_sub_{i}"))
             m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
             bot.send_message(cid, "📚 اختر المادة لإضافة المحتوى:", reply_markup=m_markup)
+        elif txt == "🗑️ حذف محتوى" and m.from_user.id == ADMIN_ID:
+            m_markup = InlineKeyboardMarkup()
+            for i, s in enumerate(SUBJECTS):
+                m_markup.add(InlineKeyboardButton(s, callback_data=f"delsub_{i}"))
+            m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
+            bot.send_message(cid, "🗑️ اختر المادة التي تريد حذف محتوى منها:", reply_markup=m_markup)
         elif txt == "📅 رفع الجدول الدراسي" and m.from_user.id == ADMIN_ID:
             user_states[cid] = "up_sched"
             bot.send_message(cid, "📅 أرسل الجدول الجديد (صورة أو ملف):")
