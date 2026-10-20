@@ -39,7 +39,8 @@ HOME_ITEMS = [
 ADMIN_ITEMS = [
     "➕ إضافة محتوى", "🗑️ حذف محتوى", 
     "📚 إضافة مادة جديدة", "✏️ تعديل مادة", 
-    "❌ حذف مادة", "💬 أسئلة الطلاب", 
+    "❌ حذف مادة", "📅 تحديث الجدول", 
+    "🔔 إرسال تذكير", "💬 أسئلة الطلاب", 
     "🏠 القائمة الرئيسية"
 ]
 
@@ -384,6 +385,31 @@ if bot:
             user_data.pop(cid, None)
             return
 
+        if st == "admin_save_schedule" and cid == ADMIN_ID:
+            ctype = m.content_type
+            fid = ""
+            if ctype == "photo":
+                fid = m.photo[-1].file_id
+            elif ctype in ["document", "video", "audio", "voice"]:
+                fid = getattr(m, ctype).file_id
+            with db() as conn:
+                conn.execute("INSERT OR REPLACE INTO settings (key, content_type, file_id, text_content) VALUES ('schedule', ?, ?, ?)", (ctype, fid, txt if ctype == "text" else ""))
+            bot.send_message(cid, "✅ تم تحديث الجدول الدراسي بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+            user_states.pop(cid, None)
+            return
+
+        if st == "admin_send_reminder" and cid == ADMIN_ID:
+            with db() as conn:
+                users = conn.execute("SELECT DISTINCT user_id FROM user_preferences").fetchall()
+            for u in users:
+                try:
+                    bot.send_message(u["user_id"], f"🔔 **تذكير هام من الإدارة:**\n\n{txt}", parse_mode="Markdown")
+                except Exception:
+                    pass
+            bot.send_message(cid, "✅ تم إرسال التذكير لجميع الطلاب بنجاح!", reply_markup=kb(ADMIN_ITEMS))
+            user_states.pop(cid, None)
+            return
+
         if st == "admin_add_doc" and cid == ADMIN_ID:
             user_data.setdefault(cid, {})["doctor"] = "" if txt == "لا يوجد" else txt
             user_states[cid] = "admin_add_title"
@@ -505,6 +531,12 @@ if bot:
                 m_markup.add(InlineKeyboardButton(f"🎓 {sem}", callback_data=f"delsub_sem_{i}"))
             m_markup.add(InlineKeyboardButton("🏠 الرئيسية", callback_data="go_home"))
             bot.send_message(cid, "❌ اختر الفصل الدراسي لحذف مادة منه بالكامل:", reply_markup=m_markup)
+        elif txt == "📅 تحديث الجدول" and m.from_user.id == ADMIN_ID:
+            user_states[cid] = "admin_save_schedule"
+            bot.send_message(cid, "📅 أرسل الجدول الدراسي الجديد (صورة، ملف PDF، أو نص):")
+        elif txt == "🔔 إرسال تذكير" and m.from_user.id == ADMIN_ID:
+            user_states[cid] = "admin_send_reminder"
+            bot.send_message(cid, "🔔 اكتب نص التذكير الذي تريد إرساله لجميع الطلاب:")
         elif txt == "💬 أسئلة الطلاب" and m.from_user.id == ADMIN_ID:
             with db() as conn:
                 rows = conn.execute("SELECT * FROM questions ORDER BY id DESC LIMIT 5").fetchall()
