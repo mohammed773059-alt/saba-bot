@@ -22,11 +22,10 @@ ADMIN_ID = int(os.getenv("ADMIN_USER_ID", "0").strip() or "0")
 bot = telebot.TeleBot(TOKEN) if TOKEN else None
 DB_FILE = "library.db"
 
+# تم التعديل إلى فصلين دراسيين فقط
 SEMESTERS = [
     "الفصل الدراسي الأول",
-    "الفصل الدراسي الثاني",
-    "الفصل الدراسي الثالث",
-    "الفصل الدراسي الرابع"
+    "الفصل الدراسي الثاني"
 ]
 
 CATEGORIES = ["المحاضرات", "شروحات فيديو", "التكاليف", "ملفات PDF", "الملحقات"]
