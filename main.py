@@ -511,7 +511,7 @@ if bot:
             with db() as conn:
                 s = conn.execute("SELECT * FROM settings WHERE key = 'schedule'").fetchone()
             if not s:
-                bot.send_message(cid, "📅 الجدول الدراسي غير متوفر حالياً.\n⏳ سوف يتم إدراجه قريباً من قبل إدارة البوت.")
+                bot.send_message(cid, "سوف يتم إدراجها قريباً")
             else:
                 if s["content_type"] == "text":
                     bot.send_message(cid, s["text_content"])
