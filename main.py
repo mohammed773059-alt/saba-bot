@@ -521,7 +521,7 @@ if bot:
                     bot.send_document(cid, s["file_id"])
         elif txt == "❓ طرح السؤال":
             user_states[cid] = "ask_q"
-            bot.send_message(cid, "✍️ قم بكتابة السؤال الذي تريد طرحه على أ/ محمد المقرمي:\n\n(يمكنك إرسال /cancel في أي وقت للإلغاء)", reply_markup=kb(["🏠 القائمة الرئيسية"]))
+            bot.send_message(cid, "✍️ قم بكتابة السؤال الذي تريد طرحه على م/ محمد الظاهر:\n\n(يمكنك إرسال /cancel في أي وقت للإلغاء)", reply_markup=kb(["🏠 القائمة الرئيسية"]))
         elif txt == "💬 متابعة السؤال":
             with db() as conn:
                 rows = conn.execute("SELECT * FROM questions WHERE user_id = ? ORDER BY id DESC LIMIT 5", (m.from_user.id,)).fetchall()
