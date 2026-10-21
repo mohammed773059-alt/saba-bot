@@ -356,6 +356,17 @@ if bot:
         txt = m.text.strip() if m.text else ""
         st = user_states.get(cid)
 
+        # دعم إلغاء أي عملية سابقة مثل طرح السؤال عبر /cancel
+        if txt.lower() in ["/cancel", "cancel"]:
+            if st in ["ask_q", "admin_add_doc", "admin_add_title", "admin_add_notes", "admin_add_file", "admin_send_reminder", "admin_save_schedule"]:
+                user_states.pop(cid, None)
+                user_data.pop(cid, None)
+                if st == "ask_q":
+                    bot.send_message(cid, "❌ تم إلغاء طرح السؤال.", reply_markup=kb(HOME_ITEMS))
+                else:
+                    bot.send_message(cid, "❌ تم الإلغاء بنجاح.", reply_markup=kb(ADMIN_ITEMS))
+                return
+
         if st and st.startswith("replying_q_") and cid == ADMIN_ID:
             qid = int(st.replace("replying_q_", ""))
             with db() as conn:
@@ -510,7 +521,7 @@ if bot:
                     bot.send_document(cid, s["file_id"])
         elif txt == "❓ طرح السؤال":
             user_states[cid] = "ask_q"
-            bot.send_message(cid, "❓ اكتب سؤالك في رسالة واحدة:", reply_markup=kb(["🏠 القائمة الرئيسية"]))
+            bot.send_message(cid, "✍️ قم بكتابة السؤال الذي تريد طرحه على أ/ محمد المقرمي:\n\n(يمكنك إرسال /cancel في أي وقت للإلغاء)", reply_markup=kb(["🏠 القائمة الرئيسية"]))
         elif txt == "💬 متابعة السؤال":
             with db() as conn:
                 rows = conn.execute("SELECT * FROM questions WHERE user_id = ? ORDER BY id DESC LIMIT 5", (m.from_user.id,)).fetchall()
